@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VectorPipe — Ingestion Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M9 10l7 13 7-13' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #070a12;
+  --bg-2: #0b1020;
+  --card: rgba(255,255,255,.035);
+  --card-solid: #0f1526;
+  --card-hi: rgba(255,255,255,.06);
+  --line: rgba(255,255,255,.08);
+  --line-2: rgba(255,255,255,.14);
+  --text: #e8ebf5;
+  --muted: #8b94ab;
+  --dim: #5d667d;
+  --violet: #7c5cff;
+  --cyan: #22d3ee;
+  --pending: #fbbf24;
+  --processing: #38bdf8;
+  --completed: #34d399;
+  --failed: #fb7185;
+  --radius: 16px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0; min-height: 100vh; font-family: var(--sans); color: var(--text); font-size: 14px; line-height: 1.45;
+  background:
+    radial-gradient(900px 500px at 12% -8%, rgba(124,92,255,.20), transparent 60%),
+    radial-gradient(800px 480px at 92% -4%, rgba(34,211,238,.13), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.mono { font-family: var(--mono); }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 22px 24px 60px; }
+
+/* ---------- header ---------- */
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.logo { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--violet), var(--cyan)); box-shadow: 0 6px 24px rgba(124,92,255,.45); }
+.brand h1 { margin: 0; font-size: 19px; letter-spacing: -.01em; font-weight: 700; }
+.brand p { margin: 1px 0 0; color: var(--muted); font-size: 12.5px; }
+.tag { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--line-2); color: var(--muted); margin-left: 8px; vertical-align: 2px; font-weight: 600; }
+.head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+.pill b { color: var(--text); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+.dot.ok { background: var(--completed); box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: ping 2s infinite; }
+.dot.bad { background: var(--failed); }
+.btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font-size: 13px;
+  background: var(--card); border: 1px solid var(--line); color: var(--text); transition: .15s; }
+.btn:hover { background: var(--card-hi); border-color: var(--line-2); }
+.btn.primary { background: linear-gradient(135deg, var(--violet), #5b8cff); border-color: transparent; font-weight: 600;
+  box-shadow: 0 6px 20px rgba(124,92,255,.35); }
+.btn.primary:hover { filter: brightness(1.1); }
+.btn svg { width: 15px; height: 15px; }
+
+/* ---------- cards ---------- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); backdrop-filter: blur(8px); }
+.card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 0; }
+.card-h h2 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: .01em; }
+.card-h .sub { color: var(--muted); font-size: 12px; }
+.card-b { padding: 14px 18px 18px; }
+
+/* ---------- KPIs ---------- */
+.kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 14px; }
+.kpi { position: relative; overflow: hidden; padding: 15px 16px 14px; min-height: 118px; }
+.kpi .lbl { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.kpi .ico { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(255,255,255,.06); }
+.kpi .ico svg { width: 14px; height: 14px; }
+.kpi .val { font-size: 30px; font-weight: 700; letter-spacing: -.02em; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.kpi .val small { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 3px; }
+.kpi .note { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.kpi svg.spark { position: absolute; right: 0; bottom: 0; width: 100%; height: 38px; opacity: .9; pointer-events: none; }
+.kpi.t-total .ico { color: var(--violet); } .kpi.t-queue .ico { color: var(--pending); }
+.kpi.t-proc .ico { color: var(--processing); } .kpi.t-done .ico { color: var(--completed); }
+.kpi.t-fail .ico { color: var(--failed); } .kpi.t-lat .ico { color: var(--cyan); }
+
+/* ---------- pipeline ---------- */
+.pipeline { display: flex; align-items: stretch; gap: 0; margin-top: 4px; }
+.node { flex: 1; min-width: 0; padding: 14px 14px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.025); position: relative; display: flex; flex-direction: column; justify-content: center; }
+.node .n-top { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.node .n-num { font-size: 26px; font-weight: 700; margin: 6px 0 2px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.node .n-cap { font-family: var(--mono); font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node.active { border-color: color-mix(in srgb, var(--c) 55%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 25%, transparent), 0 8px 30px color-mix(in srgb, var(--c) 18%, transparent); }
+.node .n-top svg { width: 15px; height: 15px; color: var(--c); }
+.link { flex: 0 0 46px; position: relative; align-self: center; height: 2px; margin: 0 -1px; z-index: 1;
+  background: repeating-linear-gradient(90deg, var(--line-2) 0 5px, transparent 5px 10px); }
+.link.flow { background: repeating-linear-gradient(90deg, var(--c1) 0 5px, transparent 5px 10px); background-size: 10px 2px; animation: dash .7s linear infinite; }
+.link::after { content: ""; position: absolute; right: -1px; top: -3px; border: 4px solid transparent; border-left: 6px solid var(--line-2); }
+.link.flow::after { border-left-color: var(--c1); }
+.branch { display: grid; grid-template-rows: 1fr 1fr; gap: 10px; flex: 1.05; min-width: 0; }
+.branch .node { padding: 10px 14px; }
+.branch .n-num { font-size: 21px; margin: 2px 0 0; }
+
+/* ---------- layout rows ---------- */
+.row { display: grid; gap: 14px; margin-bottom: 14px; }
+.row > *, .kpis > * { min-width: 0; }
+.row.two { grid-template-columns: 1.65fr 1fr; }
+.row.main { grid-template-columns: 2.2fr 1fr; }
+.feedcard { display: flex; flex-direction: column; }
+.feedcard .card-b { position: relative; flex: 1; min-height: 320px; }
+.feedcard .feed { position: absolute; inset: 12px 18px 14px; max-height: none; }
+.feedcard .empty { position: absolute; inset: 0; display: grid; place-items: center; }
+
+/* ---------- chart ---------- */
+.chart-wrap { position: relative; }
+.chartcard { display: flex; flex-direction: column; }
+.chartcard .chart-wrap { flex: 1; min-height: 250px; padding: 8px 12px 12px; }
+#chart { position: absolute; inset: 8px 12px 12px; width: calc(100% - 24px); height: calc(100% - 20px); display: block; }
+.legend { display: flex; gap: 14px; color: var(--muted); font-size: 12px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.tip { position: absolute; pointer-events: none; z-index: 5; min-width: 140px; padding: 9px 11px; border-radius: 10px; font-size: 12px;
+  background: rgba(10,14,26,.96); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.5); opacity: 0; transition: opacity .1s; }
+.tip .t { color: var(--muted); margin-bottom: 4px; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; }
+
+/* ---------- upload ---------- */
+.drop { border: 1.5px dashed var(--line-2); border-radius: 14px; padding: 22px 16px; text-align: center; transition: .18s; background: rgba(255,255,255,.015); }
+.drop.over { border-color: var(--cyan); background: rgba(34,211,238,.07); box-shadow: 0 0 0 4px rgba(34,211,238,.10); }
+.drop .big { width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 13px; display: grid; place-items: center; color: var(--cyan);
+  background: linear-gradient(135deg, rgba(124,92,255,.22), rgba(34,211,238,.18)); }
+.drop .big svg { width: 22px; height: 22px; }
+.drop p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.drop p b { color: var(--text); font-weight: 600; }
+.drop .btns { display: flex; gap: 8px; justify-content: center; margin-top: 13px; flex-wrap: wrap; }
+.uploads { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 158px; overflow: auto; }
+.uploads li { display: flex; align-items: center; gap: 9px; font-size: 12.5px; padding: 7px 10px; border-radius: 9px; background: rgba(255,255,255,.03); border: 1px solid var(--line); }
+.uploads .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uploads .st { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.uploads .st.ok { color: var(--completed); } .uploads .st.err { color: var(--failed); }
+
+/* ---------- table ---------- */
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px 0; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 12.5px; display: inline-flex; align-items: center; gap: 7px; transition: .15s; }
+.chip:hover { color: var(--text); border-color: var(--line-2); }
+.chip.on { color: var(--text); background: var(--card-hi); border-color: var(--line-2); }
+.chip .c { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 11.5px; }
+.chip.on .c { color: var(--muted); }
+.search { position: relative; }
+.search input { height: 32px; width: 210px; padding: 0 30px 0 32px; border-radius: 9px; background: rgba(255,255,255,.04); border: 1px solid var(--line); outline: none; font-size: 13px; }
+.search input:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(124,92,255,.2); }
+.search svg { position: absolute; left: 10px; top: 8px; width: 15px; height: 15px; color: var(--dim); }
+.search kbd { position: absolute; right: 8px; top: 6px; font: 11px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+.tbl-wrap { overflow-x: auto; margin-top: 10px; }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th { text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); padding: 9px 18px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 11px 18px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: middle; white-space: nowrap; }
+tbody tr { cursor: pointer; transition: background .12s; }
+tbody tr:hover { background: rgba(255,255,255,.04); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr.flash { animation: flash 1.4s ease-out; }
+.doc { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.doc .fi { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: rgba(255,255,255,.06); color: var(--muted); font: 700 9.5px var(--mono); flex: none; letter-spacing: .02em; }
+.doc .fn { max-width: 300px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.doc .id { color: var(--dim); font-size: 11.5px; font-family: var(--mono); }
+.num { font-variant-numeric: tabular-nums; color: var(--muted); }
+.badge { display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: .03em;
+  color: var(--c); background: color-mix(in srgb, var(--c) 13%, transparent); border: 1px solid color-mix(in srgb, var(--c) 30%, transparent); }
+.badge .dot { background: var(--c); width: 7px; height: 7px; }
+.badge.PENDING { --c: var(--pending); } .badge.PROCESSING { --c: var(--processing); }
+.badge.COMPLETED { --c: var(--completed); } .badge.FAILED { --c: var(--failed); }
+.badge.PROCESSING .dot { animation: pulse 1s ease-in-out infinite; }
+.retry { margin-left: 7px; font-size: 11px; color: var(--pending); border: 1px solid rgba(251,191,36,.3); border-radius: 6px; padding: 1px 6px; }
+.empty { padding: 44px 18px; text-align: center; color: var(--muted); }
+.empty svg { width: 40px; height: 40px; color: var(--dim); margin-bottom: 8px; }
+.pager { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 14px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); }
+.pager .btn { height: 30px; padding: 0 11px; }
+.pager .btn[disabled] { opacity: .4; cursor: default; }
+
+/* ---------- feed ---------- */
+.feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 470px; overflow: auto; }
+.feed li { display: grid; grid-template-columns: 10px 1fr auto; gap: 11px; align-items: start; padding: 9px 4px; border-radius: 8px; animation: slide .35s ease-out; }
+.feed .fd { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.feed .ft { font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.feed .ft b { font-weight: 600; }
+.feed .tm { color: var(--dim); font-size: 11.5px; white-space: nowrap; }
+
+/* ---------- drawer ---------- */
+.scrim { position: fixed; inset: 0; background: rgba(3,5,10,.6); backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: .2s; z-index: 40; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100vw); background: #0b1020; border-left: 1px solid var(--line-2);
+  transform: translateX(102%); transition: transform .25s cubic-bezier(.2,.8,.2,1); z-index: 50; display: flex; flex-direction: column; box-shadow: -20px 0 60px rgba(0,0,0,.5); }
+.drawer.on { transform: none; }
+.drawer-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
+.drawer-h h3 { margin: 0 0 8px; font-size: 16px; word-break: break-all; }
+.drawer-b { padding: 18px 22px 30px; overflow: auto; flex: 1; }
+.x { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); display: grid; place-items: center; flex: none; }
+.x:hover { background: var(--card-hi); } .x svg { width: 16px; height: 16px; }
+.steps { display: grid; gap: 0; margin: 4px 0 18px; }
+.step { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; position: relative; padding-bottom: 16px; }
+.step:last-child { padding-bottom: 0; }
+.step::before { content: ""; position: absolute; left: 10px; top: 20px; bottom: 0; width: 2px; background: var(--line-2); }
+.step:last-child::before { display: none; }
+.step .sd { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--card-solid); border: 2px solid var(--line-2); color: var(--dim); }
+.step.done .sd { border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
+.step.now .sd { border-color: var(--c); animation: pulse 1s infinite; }
+.step .sd svg { width: 11px; height: 11px; }
+.step .st1 { font-weight: 600; font-size: 13px; } .step .st2 { color: var(--muted); font-size: 12px; }
+.step .stt { color: var(--dim); font-size: 12px; font-family: var(--mono); }
+.kv { display: grid; grid-template-columns: 128px 1fr; gap: 9px 12px; font-size: 12.5px; margin: 0; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; word-break: break-all; }
+.kv dd.mono { font-size: 12px; }
+h4 { margin: 22px 0 10px; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+.errbox { border: 1px solid rgba(251,113,133,.35); background: rgba(251,113,133,.08); color: #ffb3bf; border-radius: 10px; padding: 10px 12px; font: 12px/1.5 var(--mono); word-break: break-word; }
+.vec { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; margin: 8px 0 6px; }
+.vec i { height: 34px; border-radius: 5px; }
+.dl { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.copy { background: none; border: 0; color: var(--dim); padding: 0 0 0 6px; vertical-align: middle; } .copy:hover { color: var(--cyan); } .copy svg { width: 13px; height: 13px; }
+
+/* ---------- toasts ---------- */
+#toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 80; }
+.toast { padding: 10px 15px; border-radius: 11px; background: #131a2e; border: 1px solid var(--line-2); box-shadow: 0 10px 34px rgba(0,0,0,.5); font-size: 13px; animation: slide .25s ease-out; }
+.toast.err { border-color: rgba(251,113,133,.5); }
+.banner { display: none; margin-bottom: 14px; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(251,113,133,.4); background: rgba(251,113,133,.09); color: #ffc0ca; font-size: 13px; }
+.banner.on { display: block; }
+
+/* ---------- animation ---------- */
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.55); } 70% { box-shadow: 0 0 0 8px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
+@keyframes dash { to { background-position: 10px 0; } }
+@keyframes slide { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes flash { from { background: rgba(124,92,255,.22); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1180px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 980px) { .row.two, .row.main { grid-template-columns: 1fr; } .pipeline { flex-direction: column; gap: 10px; } .link { display: none; } }
+@media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, 1fr); } .wrap { padding: 16px 14px 50px; } .search input { width: 150px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l7 13 7-13"/><circle cx="12" cy="19" r="1.2" fill="#fff"/></svg>
+      </div>
+      <div>
+        <h1>VectorPipe<span class="tag">local</span></h1>
+        <p>Distributed document ingestion · API → queue → worker</p>
+      </div>
+    </div>
+    <div class="head-actions">
+      <span class="pill" id="health"><i class="dot"></i><span>Connecting…</span></span>
+      <button class="btn" id="liveBtn" aria-pressed="true" title="Pause or resume live updates"></button>
+      <a class="btn" href="/docs" target="_blank" rel="noopener">API docs</a>
+      <a class="btn" href="/metrics" target="_blank" rel="noopener">Metrics</a>
+    </div>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <section class="kpis" id="kpis" aria-label="Key metrics"></section>
+
+  <section class="card" style="margin-bottom:14px">
+    <div class="card-h"><h2>Pipeline</h2><span class="sub" id="pipeSub"></span></div>
+    <div class="card-b"><div class="pipeline" id="pipeline"></div></div>
+  </section>
+
+  <div class="row two">
+    <section class="card chartcard">
+      <div class="card-h">
+        <h2>Throughput <span class="sub">· last 30 minutes, per minute</span></h2>
+        <div class="legend"><span><i style="background:var(--violet)"></i>Submitted</span><span><i style="background:var(--completed)"></i>Completed</span></div>
+      </div>
+      <div class="chart-wrap" id="chartWrap"><svg id="chart" role="img" aria-label="Documents submitted and completed per minute"></svg><div class="tip" id="tip"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><h2>Submit documents</h2><span class="sub">POST /documents</span></div>
+      <div class="card-b">
+        <div class="drop" id="drop">
+          <div class="big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg></div>
+          <p><b>Drop files here</b> to enqueue them for processing</p>
+          <p style="margin-top:2px">Each upload returns <span class="mono">202 Accepted</span> immediately</p>
+          <div class="btns">
+            <button class="btn primary" id="browse">Browse files</button>
+            <button class="btn" id="samples">Load sample documents</button>
+          </div>
+          <input type="file" id="file" multiple hidden>
+        </div>
+        <ul class="uploads" id="uploads" aria-live="polite"></ul>
+      </div>
+    </section>
+  </div>
+
+  <div class="row main">
+    <section class="card">
+      <div class="toolbar">
+        <div class="chips" id="chips" role="tablist" aria-label="Filter by status"></div>
+        <label class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="q" type="search" placeholder="Search filename" autocomplete="off" aria-label="Search by filename">
+          <kbd>/</kbd>
+        </label>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Document</th><th>Size</th><th>Status</th><th>Attempts</th><th>Submitted</th><th>Latency</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="empty"></div>
+      <div class="pager"><span id="pageInfo"></span><span style="display:flex;gap:6px"><button class="btn" id="prev">Previous</button><button class="btn" id="next">Next</button></span></div>
+    </section>
+
+    <section class="card feedcard">
+      <div class="card-h"><h2>Live activity</h2><span class="sub">status changes</span></div>
+      <div class="card-b"><ul class="feed" id="feed"></ul><div class="empty" id="feedEmpty">Waiting for activity…</div></div>
+    </section>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Document details"></aside>
+<div id="toasts" role="status"></div>
+
+<script>
+"use strict";
+/* ============================== helpers ============================== */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const STATUSES = ["PENDING", "PROCESSING", "COMPLETED", "FAILED"];
+const COLORS = { PENDING: "var(--pending)", PROCESSING: "var(--processing)", COMPLETED: "var(--completed)", FAILED: "var(--failed)" };
+const PAGE_SIZE = 10, FEED_SIZE = 25, POLL_MS = 1500;
+
+const ICONS = {
+  files: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  queue: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+  cog: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  upload: '<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>', play: '<path d="M7 4l13 8-13 8z"/>',
+  api: '<path d="M4 12h5l2-6 3 12 2-6h4"/>',
+};
+const icon = (n, extra = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${ICONS[n]}</svg>`;
+
+const fmtInt = n => Math.round(n).toLocaleString();
+function fmtBytes(b) { if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; return (b / 1048576).toFixed(2) + " MB"; }
+function fmtDur(s) { if (s == null) return "—"; if (s < 1) return Math.round(s * 1000) + " ms"; if (s < 60) return s.toFixed(1) + " s"; const m = Math.floor(s / 60); return m + "m " + Math.round(s - m * 60) + "s"; }
+function ago(iso) { const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000); if (s < 5) return "just now"; if (s < 60) return Math.floor(s) + "s ago"; if (s < 3600) return Math.floor(s / 60) + "m ago"; if (s < 86400) return Math.floor(s / 3600) + "h ago"; return Math.floor(s / 86400) + "d ago"; }
+const clock = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const ext = name => { const m = /\.([A-Za-z0-9]{1,4})$/.exec(name); return (m ? m[1] : "file").toUpperCase(); };
+const shortId = id => id.slice(0, 8);
+
+function toast(msg, err = false) {
+  const t = document.createElement("div"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg;
+  $("#toasts").appendChild(t); setTimeout(() => t.remove(), 4200);
+}
+
+async function getJSON(path) {
+  const r = await fetch(path, { headers: { Accept: "application/json" }, cache: "no-store" });
+  if (!r.ok) throw new Error(path + " → " + r.status);
+  return r.json();
+}
+
+/* animated counters */
+function setNum(el, target, fmt = fmtInt) {
+  const from = Number(el.dataset.v ?? target); el.dataset.v = target;
+  if (from === target || matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = fmt(target); return; }
+  const t0 = performance.now();
+  (function step(now) {
+    const p = Math.min(1, (now - t0) / 450), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = fmt(from + (target - from) * e);
+    if (p < 1) requestAnimationFrame(step); else el.textContent = fmt(target);
+  })(t0);
+}
+
+/* smooth path through points (monotone-ish Catmull-Rom → Bézier) */
+function smooth(pts) {
+  if (pts.length < 2) return "";
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2, k = 0.18;
+    const c1y = Math.min(Math.max(p1[1] + (p2[1] - p0[1]) * k, Math.min(p1[1], p2[1])), Math.max(p1[1], p2[1]));
+    const c2y = Math.min(Math.max(p2[1] - (p3[1] - p1[1]) * k, Math.min(p1[1], p2[1])), Math.max(p1[1], p2[1]));
+    d += ` C${p1[0] + (p2[0] - p0[0]) * k},${c1y} ${p2[0] - (p3[0] - p1[0]) * k},${c2y} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+/* ============================== state ============================== */
+const S = { live: true, filter: "ALL", q: "", page: 0, stats: null, list: { items: [], total: 0 }, feedItems: [], seen: null, events: [], flash: new Set(), online: false, timer: null };
+
+/* ============================== KPIs ============================== */
+const KPI_DEFS = [
+  { k: "total", cls: "t-total", label: "Total documents", ic: "files" },
+  { k: "queue", cls: "t-queue", label: "Queue depth", ic: "queue" },
+  { k: "proc", cls: "t-proc", label: "Processing now", ic: "cog" },
+  { k: "done", cls: "t-done", label: "Completed", ic: "check" },
+  { k: "fail", cls: "t-fail", label: "Failed", ic: "x" },
+  { k: "lat", cls: "t-lat", label: "Avg latency", ic: "clock" },
+];
+$("#kpis").innerHTML = KPI_DEFS.map(d => `
+  <article class="card kpi ${d.cls}" data-k="${d.k}">
+    <div class="lbl"><span class="ico">${icon(d.ic)}</span>${d.label}</div>
+    <div class="val"><span class="v">0</span></div>
+    <div class="note">&nbsp;</div>
+    <svg class="spark" viewBox="0 0 200 38" preserveAspectRatio="none" aria-hidden="true"></svg>
+  </article>`).join("");
+
+function spark(el, series, color) {
+  if (!series) { el.innerHTML = ""; return; }
+  const max = Math.max(1, ...series), n = series.length;
+  const pts = series.map((v, i) => [i / (n - 1) * 200, 36 - (v / max) * 30]);
+  const line = smooth(pts);
+  const id = "sg" + color.replace(/\W/g, "");
+  el.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".32"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${line} L200,38 L0,38 Z" fill="url(#${id})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderKpis(s) {
+  const c = s.counts, sum = a => a.reduce((x, y) => x + y, 0);
+  const sub = s.timeline.map(t => t.submitted), com = s.timeline.map(t => t.completed);
+  const set = (k, num, note, fmt, series, color) => {
+    const card = $(`.kpi[data-k="${k}"]`);
+    setNum($(".v", card), num, fmt || fmtInt);
+    $(".note", card).innerHTML = note;
+    spark($(".spark", card), series, color);
+  };
+  set("total", s.total, `+${fmtInt(sum(sub))} in the last 30 min`, null, sub, "#7c5cff");
+  set("queue", s.queue.visible + s.queue.in_flight, `${s.queue.visible} waiting · ${s.queue.in_flight} in flight${s.queue.dead ? ` · <b style="color:var(--failed)">${s.queue.dead} dead</b>` : ""}`, null, null);
+  set("proc", c.PROCESSING, c.PENDING ? `${fmtInt(c.PENDING)} pending behind it` : "worker(s) idle-ready", null, null);
+  set("done", c.COMPLETED, s.success_rate == null ? "no finished jobs yet" : `${(s.success_rate * 100).toFixed(1)}% success rate`, null, com, "#34d399");
+  set("fail", c.FAILED, `${fmtInt(s.processing_failures)} failed attempt${s.processing_failures === 1 ? "" : "s"} incl. retries`, null, null);
+  const l = s.latency;
+  set("lat", l.avg_seconds ?? 0, l.avg_seconds == null ? "no completions yet" : `p95 ${fmtDur(l.p95_seconds)} · ${s.throughput_per_minute.toFixed(1)}/min`, v => l.avg_seconds == null ? "—" : fmtDur(v), null);
+}
+
+/* ============================== pipeline ============================== */
+function renderPipeline(s) {
+  const c = s.counts, busy = c.PROCESSING > 0, waiting = c.PENDING > 0, backoff = Math.max(0, s.queue.in_flight - c.PROCESSING);
+  const node = (cls, color, ic, title, num, cap, active) => `
+    <div class="node ${active ? "active" : ""} ${cls}" style="--c:${color}">
+      <div class="n-top">${icon(ic)}${title}</div><div class="n-num">${fmtInt(num)}</div><div class="n-cap">${cap}</div></div>`;
+  const link = (flow, c1) => `<div class="link ${flow ? "flow" : ""}" style="--c1:${c1}" aria-hidden="true"></div>`;
+  $("#pipeline").innerHTML =
+    node("", "#7c5cff", "upload", "Submitted", s.total, "POST /documents → 202", false) + link(waiting || busy, "#7c5cff") +
+    node("", "var(--pending)", "queue", "Pending", c.PENDING, `queue · ${s.queue.visible} ready${backoff ? ` · ${backoff} backing off` : ""}`, waiting) + link(busy, "#fbbf24") +
+    node("", "var(--processing)", "cog", "Processing", c.PROCESSING, "workers · embedding", busy) + link(c.COMPLETED > 0 && busy, "#38bdf8") +
+    `<div class="branch">` +
+      node("", "var(--completed)", "check", "Completed", c.COMPLETED, "storage/processed/", c.COMPLETED > 0 && false) +
+      node("", "var(--failed)", "x", "Failed", c.FAILED, s.queue.dead ? `${s.queue.dead} dead-lettered` : "retries exhausted", c.FAILED > 0) +
+    `</div>`;
+  $("#pipeSub").textContent = busy ? `${c.PROCESSING} document${c.PROCESSING === 1 ? "" : "s"} being embedded right now` : (waiting ? "waiting for a worker…" : "idle");
+}
+
+/* ============================== chart ============================== */
+let chartPts = null, lastTimeline = null;
+let rsz; addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(() => lastTimeline && renderChart(lastTimeline), 120); });
+function renderChart(timeline) {
+  const svg = $("#chart"), box = svg.getBoundingClientRect();
+  const W = Math.max(320, Math.round(box.width)), H = Math.max(200, Math.round(box.height)), pl = 34, pr = 10, pt = 12, pb = 24;
+  lastTimeline = timeline;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const n = timeline.length, maxV = Math.max(4, ...timeline.map(t => Math.max(t.submitted, t.completed)));
+  const niceMax = Math.ceil(maxV / 4) * 4;
+  const x = i => pl + i / (n - 1) * (W - pl - pr), y = v => pt + (1 - v / niceMax) * (H - pt - pb);
+  const mk = key => timeline.map((t, i) => [x(i), y(t[key])]);
+  const A = mk("submitted"), B = mk("completed");
+  let grid = "";
+  for (let g = 0; g <= 4; g++) {
+    const v = niceMax * g / 4, yy = y(v);
+    grid += `<line x1="${pl}" x2="${W - pr}" y1="${yy}" y2="${yy}" stroke="rgba(255,255,255,.07)" stroke-dasharray="${g ? "3 4" : ""}"/><text x="${pl - 8}" y="${yy + 4}" text-anchor="end" fill="#5d667d" font-size="10.5">${Math.round(v)}</text>`;
+  }
+  let xl = "";
+  timeline.forEach((t, i) => { if (W < 520 ? (i % 15 === 0 || i === n - 1) : (i % 6 === 0 || i === n - 1)) xl += `<text x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === n - 1 ? "end" : "middle"}" fill="#5d667d" font-size="10.5">${new Date(t.minute).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</text>`; });
+  const area = (P, id) => `<path d="${smooth(P)} L${P[n - 1][0]},${H - pb} L${P[0][0]},${H - pb} Z" fill="url(#${id})"/>`;
+  svg.innerHTML = `<defs>
+      <linearGradient id="gA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c5cff" stop-opacity=".35"/><stop offset="1" stop-color="#7c5cff" stop-opacity="0"/></linearGradient>
+      <linearGradient id="gB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34d399" stop-opacity=".30"/><stop offset="1" stop-color="#34d399" stop-opacity="0"/></linearGradient></defs>
+    ${grid}${xl}${area(A, "gA")}${area(B, "gB")}
+    <path d="${smooth(A)}" fill="none" stroke="#7c5cff" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="${smooth(B)}" fill="none" stroke="#34d399" stroke-width="2.2" stroke-linecap="round"/>
+    <g id="hov" style="display:none"><line id="hl" y1="${pt}" y2="${H - pb}" stroke="rgba(255,255,255,.25)"/><circle id="h1" r="4.2" fill="#7c5cff" stroke="#0b1020" stroke-width="2"/><circle id="h2" r="4.2" fill="#34d399" stroke="#0b1020" stroke-width="2"/></g>
+    <rect id="ov" x="${pl}" y="0" width="${W - pl - pr}" height="${H}" fill="transparent"/>`;
+  chartPts = { timeline, A, B, n, W, H, pl, pr };
+  const ov = $("#ov"), tip = $("#tip"), wrap = $("#chartWrap");
+  ov.addEventListener("mousemove", e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round((px - pl) / (W - pl - pr) * (n - 1))));
+    const t = timeline[i];
+    $("#hov").style.display = ""; $("#hl").setAttribute("x1", A[i][0]); $("#hl").setAttribute("x2", A[i][0]);
+    $("#h1").setAttribute("cx", A[i][0]); $("#h1").setAttribute("cy", A[i][1]); $("#h2").setAttribute("cx", B[i][0]); $("#h2").setAttribute("cy", B[i][1]);
+    tip.innerHTML = `<div class="t">${esc(new Date(t.minute).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</div>
+      <div class="r"><span style="color:var(--violet)">Submitted</span><b>${t.submitted}</b></div><div class="r"><span style="color:var(--completed)">Completed</span><b>${t.completed}</b></div>`;
+    const wr = wrap.getBoundingClientRect(), left = e.clientX - wr.left + 14;
+    tip.style.left = Math.max(8, Math.min(left, wr.width - 160)) + "px"; tip.style.top = "18px"; tip.style.opacity = 1;
+  });
+  ov.addEventListener("mouseleave", () => { $("#hov").style.display = "none"; tip.style.opacity = 0; });
+}
+
+/* ============================== table ============================== */
+function counts() { return (S.stats && S.stats.counts) || { PENDING: 0, PROCESSING: 0, COMPLETED: 0, FAILED: 0 }; }
+function renderChips() {
+  const c = counts(), total = S.stats ? S.stats.total : 0;
+  const items = [["ALL", "All", total], ...STATUSES.map(s => [s, s[0] + s.slice(1).toLowerCase(), c[s]])];
+  $("#chips").innerHTML = items.map(([k, l, n]) => `<button class="chip ${S.filter === k ? "on" : ""}" role="tab" aria-selected="${S.filter === k}" data-f="${k}">${k !== "ALL" ? `<i class="dot" style="background:${COLORS[k]}"></i>` : ""}${l}<span class="c">${fmtInt(n)}</span></button>`).join("");
+}
+
+function latencyCell(d) {
+  if (d.completed_at) return `<span class="num">${fmtDur((new Date(d.completed_at) - new Date(d.created_at)) / 1000)}</span>`;
+  if (d.status === "FAILED") return `<span class="num">—</span>`;
+  return `<span class="num live" data-since="${esc(d.created_at)}">${fmtDur((Date.now() - new Date(d.created_at)) / 1000)}</span>`;
+}
+
+function renderRows() {
+  const items = S.list.items;
+  $("#rows").innerHTML = items.map(d => `
+    <tr data-id="${esc(d.id)}" tabindex="0" class="${S.flash.has(d.id) ? "flash" : ""}">
+      <td><div class="doc"><span class="fi">${esc(ext(d.filename))}</span><div style="min-width:0"><div class="fn" title="${esc(d.filename)}">${esc(d.filename)}</div><div class="id">${esc(shortId(d.id))}</div></div></div></td>
+      <td class="num">${fmtBytes(d.size_bytes)}</td>
+      <td><span class="badge ${esc(d.status)}"><i class="dot"></i>${esc(d.status)}</span>${d.status === "PENDING" && d.attempts > 0 ? `<span class="retry" title="${esc(d.error_message || "")}">retry ${d.attempts}</span>` : ""}</td>
+      <td class="num">${d.attempts}</td>
+      <td class="num"><time data-ts="${esc(d.created_at)}">${ago(d.created_at)}</time></td>
+      <td>${latencyCell(d)}</td>
+    </tr>`).join("");
+  S.flash.clear();
+  const empty = $("#empty");
+  if (!items.length) {
+    const filtered = S.filter !== "ALL" || S.q;
+    empty.innerHTML = `<div class="empty">${icon("files")}<div>${filtered ? "No documents match this filter." : "No documents yet."}</div><div style="font-size:12.5px;margin-top:4px">${filtered ? "" : "Drop a file above or load the sample documents to see the pipeline work."}</div></div>`;
+  } else empty.innerHTML = "";
+  const total = S.list.total, from = total ? S.page * PAGE_SIZE + 1 : 0, to = Math.min(total, S.page * PAGE_SIZE + items.length);
+  $("#pageInfo").textContent = total ? `${from}–${to} of ${fmtInt(total)}` : "0 results";
+  $("#prev").disabled = S.page === 0; $("#next").disabled = to >= total;
+}
+
+/* ============================== feed ============================== */
+const EVT = { PENDING: ["queued", "var(--pending)"], PROCESSING: ["started processing", "var(--processing)"], COMPLETED: ["completed", "var(--completed)"], FAILED: ["failed", "var(--failed)"] };
+function diffFeed(items) {
+  const now = new Map(items.map(d => [d.id, d]));
+  if (S.seen) {
+    const fresh = [];
+    for (const d of items) {
+      const prev = S.seen.get(d.id);
+      if (!prev) { fresh.push({ d, label: "submitted", c: "var(--violet)" }); if (d.status !== "PENDING") fresh.push({ d, label: EVT[d.status][0], c: EVT[d.status][1] }); S.flash.add(d.id); }
+      else if (prev.status !== d.status || prev.attempts !== d.attempts) {
+        const retry = d.status === "PENDING" && d.attempts > 0;
+        fresh.push({ d, label: retry ? "attempt failed, retrying" : EVT[d.status][0], c: retry ? "var(--pending)" : EVT[d.status][1] });
+        S.flash.add(d.id);
+      }
+    }
+    fresh.reverse().forEach(e => S.events.unshift({ id: e.d.id, name: e.d.filename, label: e.label, c: e.c, at: new Date().toISOString() }));
+    S.events = S.events.slice(0, 40);
+  }
+  S.seen = now;
+}
+function renderFeed() {
+  $("#feedEmpty").style.display = S.events.length ? "none" : "";
+  $("#feed").innerHTML = S.events.map(e => `<li style="--c:${e.c}"><i class="fd"></i><div class="ft"><b>${esc(e.name)}</b> ${esc(e.label)}</div><time class="tm" data-ts="${esc(e.at)}">${ago(e.at)}</time></li>`).join("");
+}
+
+/* ============================== drawer ============================== */
+let openId = null;
+async function openDrawer(id) {
+  openId = id; $("#scrim").classList.add("on"); const dr = $("#drawer"); dr.classList.add("on"); dr.setAttribute("aria-hidden", "false");
+  await paintDrawer(true);
+}
+function closeDrawer() { openId = null; $("#scrim").classList.remove("on"); const dr = $("#drawer"); dr.classList.remove("on"); dr.setAttribute("aria-hidden", "true"); }
+function heat(v) { const a = Math.min(1, Math.abs(v) * 2.2); return v >= 0 ? `rgba(34,211,238,${.12 + a * .88})` : `rgba(124,92,255,${.12 + a * .88})`; }
+
+async function paintDrawer(first) {
+  if (!openId) return;
+  let d;
+  try { d = await getJSON("/documents/" + encodeURIComponent(openId)); } catch (e) { if (first) toast("Could not load document", true); return; }
+  if (!openId) return;
+  const c = COLORS[d.status];
+  const created = d.created_at, done = d.completed_at;
+  const steps = [
+    { t: "Submitted", s: "Stored in object storage · row created as PENDING · job enqueued", at: created, st: "done", c: "var(--violet)" },
+    { t: d.status === "PENDING" ? (d.attempts > 0 ? "Waiting to retry" : "Waiting for a worker") : "Processing", s: d.attempts ? `Attempt ${d.attempts}` : "In the queue", at: d.attempts ? d.updated_at : null, st: d.status === "PENDING" ? "now" : (d.status === "PROCESSING" ? "now" : "done"), c: d.status === "PENDING" ? "var(--pending)" : "var(--processing)" },
+    d.status === "FAILED" ? { t: "Failed", s: "Retries exhausted — message dead-lettered", at: d.updated_at, st: "done", c: "var(--failed)", ic: "x" }
+      : { t: "Completed", s: done ? `Result written · ${fmtDur((new Date(done) - new Date(created)) / 1000)} end-to-end` : "Embeddings will be written to processed/", at: done, st: done ? "done" : "", c: "var(--completed)" },
+  ];
+  const stepIcon = s => s.st === "done" ? icon(s.ic || "check") : "";
+  $("#drawer").innerHTML = `
+    <div class="drawer-h"><div style="min-width:0"><h3>${esc(d.filename)}</h3><span class="badge ${esc(d.status)}"><i class="dot"></i>${esc(d.status)}</span></div>
+      <button class="x" id="closeD" aria-label="Close details">${icon("x")}</button></div>
+    <div class="drawer-b">
+      <h4 style="margin-top:0">Lifecycle</h4>
+      <div class="steps">${steps.map(s => `<div class="step ${s.st}" style="--c:${s.c}"><span class="sd">${stepIcon(s)}</span><div><div class="st1">${esc(s.t)}</div><div class="st2">${esc(s.s)}</div></div><div class="stt">${s.at ? esc(clock(s.at)) : ""}</div></div>`).join("")}</div>
+      ${d.error_message ? `<h4>${d.status === "FAILED" ? "Error" : "Last error"}</h4><div class="errbox">${esc(d.error_message)}</div>` : ""}
+      <h4>Details</h4>
+      <dl class="kv">
+        <dt>Document ID</dt><dd class="mono">${esc(d.id)}<button class="copy" data-copy="${esc(d.id)}" aria-label="Copy id">${icon("copy")}</button></dd>
+        <dt>Size</dt><dd>${fmtBytes(d.size_bytes)} <span style="color:var(--dim)">(${fmtInt(d.size_bytes)} bytes)</span></dd>
+        <dt>Content type</dt><dd class="mono">${esc(d.content_type)}</dd>
+        <dt>Attempts</dt><dd>${d.attempts}</dd>
+        <dt>Raw object</dt><dd class="mono">${esc(d.raw_object_key)}</dd>
+        <dt>Processed object</dt><dd class="mono">${d.processed_object_key ? esc(d.processed_object_key) : '<span style="color:var(--dim)">—</span>'}</dd>
+        <dt>Created</dt><dd>${esc(new Date(d.created_at).toLocaleString())}</dd>
+        <dt>Updated</dt><dd>${esc(new Date(d.updated_at).toLocaleString())}</dd>
+        <dt>Completed</dt><dd>${d.completed_at ? esc(new Date(d.completed_at).toLocaleString()) : '<span style="color:var(--dim)">—</span>'}</dd>
+      </dl>
+      <div id="result"></div>
+      <div class="dl"><a class="btn" href="/documents/${esc(d.id)}" target="_blank" rel="noopener">${icon("api")} JSON</a>${d.status === "COMPLETED" ? `<a class="btn" href="/documents/${esc(d.id)}/result" target="_blank" rel="noopener">${icon("files")} Result</a>` : ""}</div>
+    </div>`;
+  $("#closeD").onclick = closeDrawer;
+  if (d.status === "COMPLETED") {
+    try {
+      const r = await getJSON(`/documents/${encodeURIComponent(d.id)}/result`);
+      if (openId !== d.id) return;
+      const v = r.chunks[0] ? r.chunks[0].embedding : [];
+      $("#result").innerHTML = `<h4>Embedding result</h4>
+        <dl class="kv"><dt>Model</dt><dd class="mono">${esc(r.model)}</dd><dt>Dimensions</dt><dd>${esc(r.dimensions)}</dd><dt>Chunks</dt><dd>${fmtInt(r.chunk_count)}</dd><dt>Source SHA-256</dt><dd class="mono" title="${esc(r.source.sha256)}">${esc(r.source.sha256.slice(0, 24))}…</dd></dl>
+        <div style="margin-top:12px;color:var(--muted);font-size:12px">Chunk 0 vector <span style="color:var(--dim)">(cyan = positive, violet = negative)</span></div>
+        <div class="vec" role="img" aria-label="Heat strip of the first chunk embedding">${v.map(x => `<i style="background:${heat(x)}" title="${esc(x)}"></i>`).join("")}</div>`;
+    } catch { /* result not available; ignore */ }
+  }
+}
+
+/* ============================== uploads ============================== */
+const uploads = [];
+function renderUploads() {
+  $("#uploads").innerHTML = uploads.slice(0, 30).map(u => `<li><span class="nm" title="${esc(u.name)}">${esc(u.name)}</span><span class="st ${u.cls}">${esc(u.text)}</span></li>`).join("");
+}
+async function uploadFiles(files) {
+  for (const f of files) {
+    const u = { name: f.name, text: "uploading…", cls: "" }; uploads.unshift(u); renderUploads();
+    try {
+      const fd = new FormData(); fd.append("file", f, f.name);
+      const r = await fetch("/documents", { method: "POST", body: fd });
+      if (r.status === 202) { const j = await r.json(); u.text = "202 · " + shortId(j.id); u.cls = "ok"; }
+      else { let m = r.status; try { const j = await r.json(); m = r.status + " · " + (typeof j.detail === "string" ? j.detail : "invalid request"); } catch {} u.text = String(m); u.cls = "err"; toast(`${f.name}: ${m}`, true); }
+    } catch (e) { u.text = "network error"; u.cls = "err"; toast(`${f.name}: network error`, true); }
+    renderUploads();
+  }
+  refresh();
+}
+
+function lorem(seed, bytes) {
+  const words = "ingestion pipeline vector embedding queue worker latency throughput retry visibility timeout object storage checkpoint schema migration index shard replica quorum backpressure idempotent payload metric alert dashboard cluster region failover snapshot restore".split(" ");
+  let out = "", i = seed;
+  while (out.length < bytes) { out += words[(i * 7 + (i >> 3)) % words.length] + (i % 11 === 0 ? ".\n" : " "); i++; }
+  return out;
+}
+function sampleFiles() {
+  const mk = (name, type, body) => new File([body], name, { type });
+  const rows = Array.from({ length: 260 }, (_, i) => `${1000 + i},customer_${i},${["positive", "neutral", "negative"][i % 3]},${(i * 37 % 5) + 1},"${lorem(i, 60).replace(/\n/g, " ").trim()}"`).join("\n");
+  const json = JSON.stringify({ openapi: "3.1.0", info: { title: "Orders API", version: "2.4.0" }, paths: Object.fromEntries(Array.from({ length: 70 }, (_, i) => [`/v2/resource-${i}`, { get: { summary: lorem(i, 50).trim() } }])) }, null, 2);
+  return [
+    mk("q3-financial-report.txt", "text/plain", "Q3 FINANCIAL REPORT\n\n" + lorem(1, 42000)),
+    mk("customer-feedback.csv", "text/csv", "id,customer,sentiment,score,comment\n" + rows),
+    mk("incident-postmortem.md", "text/markdown", "# Incident postmortem\n\n" + lorem(5, 12000)),
+    mk("product-roadmap.md", "text/markdown", "# Roadmap 2026\n\n" + lorem(9, 8200)),
+    mk("orders-api-spec.json", "application/json", json),
+    mk("meeting-notes-" + new Date().toISOString().slice(0, 10) + ".txt", "text/plain", lorem(13, 4300)),
+  ];
+}
+
+/* ============================== data loop ============================== */
+function setOnline(ok, detail) {
+  S.online = ok;
+  $("#health").innerHTML = ok ? `<i class="dot ok"></i><span>API <b>online</b></span>` : `<i class="dot bad"></i><span>API <b>unreachable</b></span>`;
+  const b = $("#banner"); b.classList.toggle("on", !ok);
+  if (!ok) b.textContent = "Cannot reach the API" + (detail ? ` (${detail})` : "") + " — retrying…";
+}
+
+let inflight = false;
+async function refresh() {
+  if (inflight) return; inflight = true;
+  try {
+    const qs = new URLSearchParams({ limit: PAGE_SIZE, offset: S.page * PAGE_SIZE });
+    if (S.filter !== "ALL") qs.set("status", S.filter);
+    if (S.q) qs.set("q", S.q);
+    const [stats, feed, list] = await Promise.all([
+      getJSON("/stats"),
+      getJSON("/documents?limit=" + FEED_SIZE),
+      getJSON("/documents?" + qs),
+    ]);
+    setOnline(true);
+    S.stats = stats; S.list = list; S.feedItems = feed.items;
+    diffFeed(feed.items);
+    renderKpis(stats); renderPipeline(stats); renderChart(stats.timeline); renderChips(); renderRows(); renderFeed();
+    if (openId) paintDrawer(false);
+  } catch (e) { setOnline(false, e.message); }
+  finally { inflight = false; }
+}
+function schedule() { clearInterval(S.timer); if (S.live && !document.hidden) S.timer = setInterval(refresh, POLL_MS); }
+
+function paintLive() {
+  $("#liveBtn").innerHTML = S.live ? `${icon("pause")} Pause live` : `${icon("play")} Resume live`;
+  $("#liveBtn").setAttribute("aria-pressed", String(S.live));
+}
+
+/* tick relative times without hitting the API */
+setInterval(() => {
+  document.querySelectorAll("time[data-ts]").forEach(t => t.textContent = ago(t.dataset.ts));
+  document.querySelectorAll(".live[data-since]").forEach(t => t.textContent = fmtDur((Date.now() - new Date(t.dataset.since)) / 1000));
+}, 1000);
+
+/* ============================== events ============================== */
+$("#chips").addEventListener("click", e => { const b = e.target.closest("[data-f]"); if (!b) return; S.filter = b.dataset.f; S.page = 0; refresh(); });
+let qTimer; $("#q").addEventListener("input", e => { clearTimeout(qTimer); qTimer = setTimeout(() => { S.q = e.target.value.trim(); S.page = 0; refresh(); }, 250); });
+$("#prev").onclick = () => { if (S.page > 0) { S.page--; refresh(); } };
+$("#next").onclick = () => { S.page++; refresh(); };
+$("#rows").addEventListener("click", e => { const tr = e.target.closest("tr[data-id]"); if (tr) openDrawer(tr.dataset.id); });
+$("#rows").addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest("tr[data-id]"); if (tr) openDrawer(tr.dataset.id); } });
+$("#scrim").onclick = closeDrawer;
+$("#drawer").addEventListener("click", e => { const b = e.target.closest("[data-copy]"); if (b) { navigator.clipboard?.writeText(b.dataset.copy).then(() => toast("Copied")); } });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeDrawer();
+  if (e.key === "/" && !/input|textarea/i.test(document.activeElement.tagName)) { e.preventDefault(); $("#q").focus(); }
+});
+$("#liveBtn").onclick = () => { S.live = !S.live; paintLive(); schedule(); if (S.live) refresh(); };
+document.addEventListener("visibilitychange", () => { schedule(); if (!document.hidden && S.live) refresh(); });
+
+const drop = $("#drop");
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { if (e.dataTransfer.files.length) uploadFiles([...e.dataTransfer.files]); });
+$("#browse").onclick = () => $("#file").click();
+$("#file").onchange = e => { uploadFiles([...e.target.files]); e.target.value = ""; };
+$("#samples").onclick = () => uploadFiles(sampleFiles());
+
+paintLive(); schedule(); refresh();
+</script>
+</body>
+</html>
