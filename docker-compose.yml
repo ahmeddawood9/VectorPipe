@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: vectorpipe
+      POSTGRES_PASSWORD: vectorpipe
+      POSTGRES_DB: vectorpipe
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vectorpipe -d vectorpipe"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.api"
+    environment:
+      - DATABASE_URL=postgresql://vectorpipe:vectorpipe@postgres:5432/vectorpipe
+      - LOCAL_STORAGE_ROOT=/app/storage
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      - DATABASE_URL=postgresql://vectorpipe:vectorpipe@postgres:5432/vectorpipe
+      - LOCAL_STORAGE_ROOT=/app/storage
+      - WORKER_METRICS_PORT=9101
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    deploy:
+      replicas: 2
+
+volumes:
+  postgres_data:
+  storage_data:

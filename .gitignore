@@ -1,0 +1,37 @@
+# Environment & Secrets
+.env
+
+# Runtime Data & Storage
+storage/
+
+# Python / Compiled / Testing
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Documentation Inbox
+docs/_inbox/
+
+# IDEs & Editors
+.vscode/
+.idea/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
