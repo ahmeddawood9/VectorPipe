@@ -1,7 +1,17 @@
 # VectorPipe
 
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791)
+![Terraform](https://img.shields.io/badge/Terraform-%E2%89%A51.10-7B42BC)
+![Docker](https://img.shields.io/badge/Docker-compose-2496ED)
+
 A distributed document-ingestion prototype that runs **entirely on your machine** — no AWS account,
-credentials or network access needed.
+credentials or network access needed. (AWS is only used by the optional Terraform remote-state
+bootstrap, see [Infrastructure](#infrastructure).)
+
+**Contents:** [Install](#1-install) · [Docker](#run-with-docker) · [API](#api) ·
+[Reliability](#reliability-design) · [Infrastructure](#infrastructure) · [Layout](#layout)
 
 ```
 Client ──▶ FastAPI API ──┬─▶ local object storage   storage/raw/<id>
@@ -102,6 +112,17 @@ Tests never touch AWS. They cover upload, status, invalid requests, object stora
 (visibility, redelivery, dead-lettering, concurrency), worker success/failure/duplicate/concurrent
 paths, graceful shutdown, migrations vs. models, and the full end-to-end flow.
 
+## Run with Docker
+
+Starts PostgreSQL, the API (migrations run on boot) and two workers:
+
+```bash
+docker compose up --build
+```
+
+Dashboard at **http://localhost:8000/**; PostgreSQL is published on host port `5433`.
+Scale workers with `docker compose up --scale worker=4`.
+
 ## 7. Submit a document
 
 ```bash
@@ -148,6 +169,24 @@ from every worker and survives restarts.
 
 Inspect dead-lettered messages: `sqlite3 storage/queue/queue.sqlite3 "select * from messages where state='dead'"`.
 
+## Infrastructure
+
+Terraform lives in `terraform/`. State is stored remotely in S3 with native locking and is never
+committed (`*.tfstate` is git-ignored).
+
+| Path | Purpose |
+|---|---|
+| `terraform/bootstrap/` | One-time stack that creates the hardened state bucket `ingest-pipeline-tfstate-<env>` (versioning, encryption, public access block, TLS-only, `prevent_destroy`). Its own state lives in the bucket under `bootstrap/`. |
+| `terraform/backend.tf` | Main stack backend: `vectorpipe/terraform.tfstate` in that bucket, `use_lockfile = true` |
+
+```bash
+cd terraform && terraform init     # connects to the S3 backend
+```
+
+Requires Terraform >= 1.10 and AWS credentials with access to the bucket. See
+[`terraform/bootstrap/README.md`](terraform/bootstrap/README.md) for first-time setup.
+`.github/workflows/` and `docs/` are placeholders for CI and runbooks.
+
 ## Layout
 
 ```
@@ -158,4 +197,5 @@ app/models     SQLAlchemy models        app/schemas   Pydantic schemas
 app/db         engine/session           app/config    settings + logging
 app/metrics    Prometheus metrics       migrations/   Alembic
 tests/         pytest suite             storage/      raw/ processed/ (runtime data)
+terraform/     remote-state backend + bootstrap
 ```
