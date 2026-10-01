@@ -24,6 +24,15 @@ env/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+*.tfvars.json
+tfplan
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 
 # Documentation Inbox
 docs/_inbox/
