@@ -34,6 +34,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Source archives of Terraform config (extract, then commit the .tf files)
+terraform/*.zip
+
 # Documentation Inbox
 docs/_inbox/
 

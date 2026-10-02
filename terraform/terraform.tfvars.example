@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+# Your IAM user; it is allowed to assume the vectorpipe-dev role.
+dev_user_arn = "arn:aws:iam::<account-id>:user/<your-user>"
