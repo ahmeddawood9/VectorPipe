@@ -33,8 +33,9 @@ stopped and scaled (run N workers) independently.
 
 Application code depends only on the `ObjectStorage` and `Queue` interfaces
 (`app/services/object_storage.py`, `app/services/queue.py`); today's implementations are
-`LocalObjectStorage` (files) and `LocalQueue` (a SQLite file with SQS-like semantics). No cloud
-implementations are included.
+`LocalObjectStorage` (files) and `LocalQueue` (a SQLite file with SQS-like semantics). `S3ObjectStorage`
+and `SqsQueue` implement the same interfaces for AWS and are selected with settings (see
+[Running against AWS](#running-against-aws)); local stays the default.
 
 ## 1. Install
 
@@ -72,6 +73,8 @@ Set `DATABASE_URL=postgresql://vectorpipe:vectorpipe@localhost:5432/vectorpipe` 
 | *optional* `MAX_UPLOAD_BYTES` | `10485760` | Upload size limit |
 | *optional* `API_HOST` / `API_PORT` | `127.0.0.1` / `8000` | API bind address |
 | *optional* `WORKER_METRICS_PORT` | `9101` | Worker Prometheus endpoint (`0` disables; use a different port per worker) |
+| *optional* `STORAGE_BACKEND` / `QUEUE_BACKEND` | `local` / `local` | `s3` and/or `sqs` to use AWS |
+| *optional* `AWS_REGION`, `S3_BUCKET`, `SQS_QUEUE_URL`, `SQS_DLQ_URL` | – | Required for the matching AWS backend |
 | *optional* `SIMULATE_FAILURE_RATE` | `0` | Dev aid: chance (0–1) that an attempt fails, to exercise retries |
 
 Keep `PROCESSING_DELAY_SECONDS` below `QUEUE_VISIBILITY_TIMEOUT_SECONDS`.
@@ -104,11 +107,11 @@ WORKER_METRICS_PORT=9102 python -m app.worker     # a second one
 ## 6. Test
 
 ```bash
-pytest                                   # 120+ tests, temporary SQLite + temp dirs, no external services
+pytest                                   # 170+ tests, temporary SQLite + temp dirs, no external services
 TEST_DATABASE_URL=postgresql://user:pw@localhost:5432/vectorpipe_test pytest   # same suite on PostgreSQL
 ```
 
-Tests never touch AWS. They cover upload, status, invalid requests, object storage, queue
+Tests never touch AWS (the S3/SQS backends run against moto). They cover upload, status, invalid requests, object storage, queue
 (visibility, redelivery, dead-lettering, concurrency), worker success/failure/duplicate/concurrent
 paths, graceful shutdown, migrations vs. models, and the full end-to-end flow.
 
@@ -168,6 +171,21 @@ from every worker and survives restarts.
 * Structured JSON logs, request IDs, DB/connect timeouts, graceful shutdown for API and worker.
 
 Inspect dead-lettered messages: `sqlite3 storage/queue/queue.sqlite3 "select * from messages where state='dead'"`.
+
+## Running against AWS
+
+Set `STORAGE_BACKEND=s3` and/or `QUEUE_BACKEND=sqs` plus the variables above. Each can be switched
+independently. No keys go in `.env`: boto3 uses the ambient identity (IAM role, SSO, `AWS_PROFILE`).
+
+* The SQS queue must have a **redrive policy** pointing at the DLQ; SQS itself does the dead-lettering. Its
+  `maxReceiveCount` must equal `QUEUE_MAX_RECEIVE_COUNT` (startup fails without a policy and warns on a mismatch).
+* Required IAM: S3 `GetObject`/`PutObject`/`DeleteObject` on the bucket; SQS `SendMessage` (API),
+  `ReceiveMessage`/`DeleteMessage`/`ChangeMessageVisibility` (worker), and `GetQueueAttributes` on **both**
+  the queue and the DLQ for **both** roles (startup policy check and `/stats`, `/metrics`).
+* SQS cannot detect stale receipt handles: a `delete` after redelivery can succeed without removing the
+  message. Processing stays correct because the claim is an atomic conditional update.
+* Tests run both backends under [moto](https://github.com/getmoto/moto) (no AWS account needed). Moto does not
+  enforce IAM, so permission gaps only show up against real AWS.
 
 ## Infrastructure
 
