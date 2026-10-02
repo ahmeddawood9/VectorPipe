@@ -6,9 +6,9 @@
 ![Terraform](https://img.shields.io/badge/Terraform-%E2%89%A51.10-7B42BC)
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ED)
 
-A distributed document-ingestion prototype that runs **entirely on your machine** — no AWS account,
-credentials or network access needed. (AWS is only used by the optional Terraform remote-state
-bootstrap, see [Infrastructure](#infrastructure).)
+A distributed document-ingestion prototype that runs **entirely on your machine** by default — no AWS
+account, credentials or network access needed — and switches to **S3 + SQS** with two settings (see
+[Running against AWS](#running-against-aws) and [Infrastructure](#infrastructure)).
 
 **Contents:** [Install](#1-install) · [Docker](#run-with-docker) · [API](#api) ·
 [Reliability](#reliability-design) · [Infrastructure](#infrastructure) · [Layout](#layout)
@@ -199,21 +199,35 @@ independently. No keys go in `.env`: boto3 uses the ambient identity (IAM role, 
 
 ## Infrastructure
 
-Terraform lives in `terraform/`. State is stored remotely in S3 with native locking and is never
-committed (`*.tfstate` is git-ignored).
+Terraform lives in `terraform/`, everything in **one region, `us-east-1`**. State is stored remotely in S3
+with native locking and is never committed (`*.tfstate` is git-ignored).
 
 | Path | Purpose |
 |---|---|
 | `terraform/bootstrap/` | One-time stack that creates the hardened state bucket `ingest-pipeline-tfstate-<env>` (versioning, encryption, public access block, TLS-only, `prevent_destroy`). Its own state lives in the bucket under `bootstrap/`. |
-| `terraform/backend.tf` | Main stack backend: `vectorpipe/terraform.tfstate` in that bucket, `use_lockfile = true` |
+| `terraform/backend.tf`, `providers.tf`, `variables.tf` | Foundation layer: AWS provider 6.x, state at `foundation/terraform.tfstate`, `use_lockfile = true` |
+| `terraform/s3.tf` | Documents bucket `vectorpipe-documents-<account-id>`: private, SSE-S3, TLS-only |
+| `terraform/sqs.tf` | `vectorpipe-jobs` queue + `vectorpipe-jobs-dlq`; redrive after 3 receives, visibility 60 s |
+| `terraform/ecr.tf` | `vectorpipe` image repository: immutable tags, scan on push, keeps the last 10 images |
+| `terraform/iam.tf` | Least-privilege `vectorpipe-api` / `vectorpipe-worker` policies and the `vectorpipe-dev` role for local runs |
+| `terraform/outputs.tf` | Bucket, queue URLs, region, ECR URL, role and policy ARNs |
 
 ```bash
-cd terraform && terraform init     # connects to the S3 backend
+cd terraform
+cp terraform.tfvars.example terraform.tfvars   # set dev_user_arn
+terraform init
+terraform plan                                 # review: + create, ~ change, - destroy
+terraform apply
+terraform output                               # values for .env
 ```
 
-Requires Terraform >= 1.10 and AWS credentials with access to the bucket. See
+Requires Terraform >= 1.10 and AWS credentials allowed to manage S3, SQS, ECR and IAM. See
 [`terraform/bootstrap/README.md`](terraform/bootstrap/README.md) for first-time setup.
-`.github/workflows/` and `docs/` are placeholders for CI and runbooks.
+`max_receive_count` and `visibility_timeout_seconds` must match `QUEUE_MAX_RECEIVE_COUNT` and
+`QUEUE_VISIBILITY_TIMEOUT_SECONDS`. `.github/workflows/` and `docs/` are placeholders for CI and runbooks.
+
+**Verified on AWS:** as the `vectorpipe-dev` role, the full upload → `COMPLETED` flow (objects in S3,
+message acknowledged), and a job failing 3 times that ended `FAILED` with SQS moving it to the DLQ.
 
 ## Layout
 
@@ -225,5 +239,5 @@ app/models     SQLAlchemy models        app/schemas   Pydantic schemas
 app/db         engine/session           app/config    settings + logging
 app/metrics    Prometheus metrics       migrations/   Alembic
 tests/         pytest suite             storage/      raw/ processed/ (runtime data)
-terraform/     remote-state backend + bootstrap
+terraform/     state bootstrap + foundation layer (S3, SQS + DLQ, ECR, IAM)
 ```
