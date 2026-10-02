@@ -1,4 +1,4 @@
-"""Queue abstraction plus a SQLite-backed local implementation.
+"""Queue abstraction plus a SQLite-backed local implementation and an SQS implementation.
 
 The semantics deliberately mirror the small subset of SQS the application needs:
 
@@ -12,10 +12,16 @@ The semantics deliberately mirror the small subset of SQS the application needs:
 
 ``LocalQueue`` uses one SQLite file in WAL mode with ``BEGIN IMMEDIATE`` transactions, so any number
 of API/worker processes can share it safely. It is a development/testing stand-in, not a broker.
+
+``SqsQueue`` maps the same six operations onto Amazon SQS. Dead-lettering is done by SQS itself through the
+queue's redrive policy, so the application only has to agree with that policy on ``max_receive_count``.
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import math
 import sqlite3
 import threading
 import time
@@ -25,6 +31,10 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+from botocore.exceptions import BotoCoreError, ClientError
+
+logger = logging.getLogger(__name__)
 
 
 class QueueError(Exception):
@@ -273,3 +283,190 @@ class LocalQueue(Queue):
         except sqlite3.Error as exc:
             raise QueueError(str(exc)) from exc
         return QueueStats(visible=int(row[0]), in_flight=int(row[1]), dead=int(row[2]))
+
+
+# SQS limits: 10 messages per receive, 20 s per long poll, 12 h of visibility.
+_SQS_MAX_BATCH = 10
+_SQS_MAX_WAIT = 20
+_SQS_MAX_VISIBILITY = 12 * 3600
+# Error codes SQS uses when a receipt handle no longer refers to an in-flight message.
+_STALE_HANDLE_CODES = {"ReceiptHandleIsInvalid", "MessageNotInflight", "InvalidParameterValue"}
+
+
+class SqsQueue(Queue):
+    """Amazon SQS standard queue with a dead-letter queue.
+
+    Credentials come from the ambient AWS identity (IAM role, SSO, env). The queue's redrive policy
+    (``maxReceiveCount``) is what actually dead-letters messages; ``max_receive_count`` here must match it
+    so the worker knows which delivery is the final attempt. Both are checked on construction.
+
+    Caveat: SQS cannot tell that a receipt handle is stale. Deleting a message with the handle of an older
+    delivery can report success without removing it, so ``delete() is True`` is not proof the message is
+    gone. Idempotent, atomically claimed processing (not this class) is what prevents duplicate work.
+    """
+
+    def __init__(
+        self,
+        queue_url: str,
+        dlq_url: str,
+        *,
+        region: str | None = None,
+        visibility_timeout: float = 30.0,
+        max_receive_count: int = 3,
+        poll_chunk_seconds: float = 2.0,
+        stats_cache_seconds: float = 0.0,
+        verify_redrive: bool = True,
+        client=None,
+    ) -> None:
+        if not queue_url or not dlq_url:
+            raise ValueError("queue_url and dlq_url are required")
+        if visibility_timeout <= 0 or max_receive_count < 1 or poll_chunk_seconds <= 0:
+            raise ValueError("visibility_timeout, max_receive_count and poll_chunk_seconds must be positive")
+        self._queue_url = queue_url
+        self._dlq_url = dlq_url
+        self._visibility_timeout = visibility_timeout
+        self._max_receive_count = max_receive_count
+        # A single long poll blocks for at most this long, so a stop request is noticed promptly.
+        self._poll_chunk = min(poll_chunk_seconds, _SQS_MAX_WAIT)
+        self._stats_cache_seconds = stats_cache_seconds
+        self._stats_cache: tuple[float, QueueStats] | None = None
+        if client is None:
+            import boto3
+            from botocore.config import Config
+
+            client = boto3.client(
+                "sqs",
+                region_name=region,
+                config=Config(
+                    retries={"mode": "standard", "max_attempts": 5},
+                    connect_timeout=5,
+                    read_timeout=_SQS_MAX_WAIT + 10,  # must exceed the long-poll wait
+                ),
+            )
+        self._sqs = client
+        if verify_redrive:
+            self._check_redrive_policy()
+
+    @property
+    def max_receive_count(self) -> int:
+        return self._max_receive_count
+
+    # ------------------------------------------------------------------ helpers
+    def _attributes(self, queue_url: str, names: list[str]) -> dict[str, str]:
+        try:
+            return self._sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=names).get("Attributes", {})
+        except (BotoCoreError, ClientError) as exc:
+            raise QueueError(f"get_queue_attributes failed: {exc}") from exc
+
+    def _check_redrive_policy(self) -> None:
+        raw = self._attributes(self._queue_url, ["RedrivePolicy"]).get("RedrivePolicy")
+        if not raw:
+            raise QueueError(
+                "the SQS queue has no redrive policy, so failed messages would never be dead-lettered; "
+                "attach the dead-letter queue to it"
+            )
+        configured = int(json.loads(raw).get("maxReceiveCount", 0))
+        if configured != self._max_receive_count:
+            logger.warning(
+                "QUEUE_MAX_RECEIVE_COUNT does not match the queue's redrive policy; the final attempt "
+                "will be misjudged",
+                extra={"app_max_receive_count": self._max_receive_count, "queue_max_receive_count": configured},
+            )
+
+    # ------------------------------------------------------------------ Queue interface
+    def enqueue(self, body: str) -> str:
+        try:
+            return self._sqs.send_message(QueueUrl=self._queue_url, MessageBody=body)["MessageId"]
+        except (BotoCoreError, ClientError) as exc:
+            raise QueueError(f"send_message failed: {exc}") from exc
+
+    def receive(
+        self,
+        *,
+        max_messages: int = 1,
+        wait_seconds: float = 0.0,
+        visibility_timeout: float | None = None,
+        stop_event: threading.Event | None = None,
+    ) -> list[QueueMessage]:
+        if max_messages < 1:
+            raise ValueError("max_messages must be >= 1")
+        timeout = self._visibility_timeout if visibility_timeout is None else visibility_timeout
+        timeout_s = min(max(0, math.ceil(timeout)), _SQS_MAX_VISIBILITY)
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            wait = min(math.ceil(max(remaining, 0)), math.ceil(self._poll_chunk))
+            try:
+                response = self._sqs.receive_message(
+                    QueueUrl=self._queue_url,
+                    MaxNumberOfMessages=min(max_messages, _SQS_MAX_BATCH),
+                    WaitTimeSeconds=wait,
+                    VisibilityTimeout=timeout_s,
+                    MessageSystemAttributeNames=["ApproximateReceiveCount", "SentTimestamp"],
+                )
+            except (BotoCoreError, ClientError) as exc:
+                raise QueueError(f"receive_message failed: {exc}") from exc
+            raw_messages = response.get("Messages", [])
+            if raw_messages:
+                return [self._to_message(m) for m in raw_messages]
+            if stop_event is not None and stop_event.is_set():
+                return []
+            if deadline - time.monotonic() <= 0:
+                return []
+
+    @staticmethod
+    def _to_message(raw: dict) -> QueueMessage:
+        attrs = raw.get("Attributes", {})
+        return QueueMessage(
+            message_id=raw["MessageId"],
+            receipt_handle=raw["ReceiptHandle"],
+            body=raw["Body"],
+            receive_count=int(attrs.get("ApproximateReceiveCount", 1)),
+            enqueued_at=int(attrs.get("SentTimestamp", 0)) / 1000.0,
+        )
+
+    def delete(self, receipt_handle: str) -> bool:
+        try:
+            self._sqs.delete_message(QueueUrl=self._queue_url, ReceiptHandle=receipt_handle)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in _STALE_HANDLE_CODES:
+                return False
+            raise QueueError(f"delete_message failed: {exc}") from exc
+        except BotoCoreError as exc:
+            raise QueueError(f"delete_message failed: {exc}") from exc
+        return True
+
+    def change_visibility(self, receipt_handle: str, timeout_seconds: float) -> bool:
+        if timeout_seconds < 0:
+            raise ValueError("timeout_seconds must be >= 0")
+        try:
+            self._sqs.change_message_visibility(
+                QueueUrl=self._queue_url,
+                ReceiptHandle=receipt_handle,
+                VisibilityTimeout=min(math.ceil(timeout_seconds), _SQS_MAX_VISIBILITY),
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in _STALE_HANDLE_CODES:
+                return False
+            raise QueueError(f"change_message_visibility failed: {exc}") from exc
+        except BotoCoreError as exc:
+            raise QueueError(f"change_message_visibility failed: {exc}") from exc
+        return True
+
+    def stats(self) -> QueueStats:
+        now = time.monotonic()
+        if self._stats_cache and now - self._stats_cache[0] < self._stats_cache_seconds:
+            return self._stats_cache[1]
+        main = self._attributes(
+            self._queue_url, ["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible"]
+        )
+        dead = self._attributes(
+            self._dlq_url, ["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible"]
+        )
+        result = QueueStats(
+            visible=int(main["ApproximateNumberOfMessages"]),
+            in_flight=int(main["ApproximateNumberOfMessagesNotVisible"]),
+            dead=int(dead["ApproximateNumberOfMessages"]) + int(dead["ApproximateNumberOfMessagesNotVisible"]),
+        )
+        self._stats_cache = (now, result)
+        return result

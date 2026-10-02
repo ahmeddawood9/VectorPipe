@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.config import Settings, configure_logging
 from app.db import check_database, create_db_engine, create_session_factory
 from app.metrics import WorkerMetrics
-from app.services import LocalObjectStorage, LocalQueue
+from app.services import build_queue, build_storage
 from app.worker import JobProcessor, Worker
 
 logger = logging.getLogger("app.worker")
@@ -40,13 +40,12 @@ def main() -> int:
             "still running (results stay correct, but work is duplicated)"
         )
 
-    storage = LocalObjectStorage(settings.local_storage_root)
-    queue = LocalQueue(
-        settings.queue_path,
-        visibility_timeout=settings.queue_visibility_timeout_seconds,
-        max_receive_count=settings.queue_max_receive_count,
-        poll_interval=settings.queue_poll_interval_seconds,
-    )
+    try:
+        storage = build_storage(settings)
+        queue = build_queue(settings)
+    except Exception as exc:  # noqa: BLE001 - misconfigured AWS resources should stop the worker cleanly
+        logger.error(f"could not initialise storage/queue backends: {exc}")
+        return 1
     metrics = WorkerMetrics()
     if settings.worker_metrics_port:
         try:
@@ -77,6 +76,8 @@ def main() -> int:
     logger.info(
         "worker configured",
         extra={
+            "storage_backend": settings.storage_backend,
+            "queue_backend": settings.queue_backend,
             "storage_root": str(settings.local_storage_root),
             "processing_delay_seconds": settings.processing_delay_seconds,
             "visibility_timeout_seconds": settings.queue_visibility_timeout_seconds,
