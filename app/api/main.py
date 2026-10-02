@@ -19,7 +19,7 @@ from app.config import Settings, get_settings
 from app.db import create_db_engine, create_session_factory
 from app.metrics import ApiMetrics, StateCollector
 from app.schemas import Stats  # noqa: F401  (re-exported for OpenAPI)
-from app.services import LocalObjectStorage, LocalQueue, ObjectStorage, ObjectStorageError, Queue, QueueError
+from app.services import ObjectStorage, ObjectStorageError, Queue, QueueError, build_queue, build_storage
 from app.services import documents as repo
 
 logger = logging.getLogger(__name__)
@@ -32,19 +32,14 @@ def create_app(
     storage: ObjectStorage | None = None,
     queue: Queue | None = None,
 ) -> FastAPI:
-    """Build the app. Collaborators default to the real local implementations; tests inject fakes."""
+    """Build the app. Collaborators default to the backends chosen in settings; tests inject fakes."""
     settings = settings or get_settings()
     engine = None
     if session_factory is None:
         engine = create_db_engine(settings.database_url)
         session_factory = create_session_factory(engine)
-    storage = storage or LocalObjectStorage(settings.local_storage_root)
-    queue = queue or LocalQueue(
-        settings.queue_path,
-        visibility_timeout=settings.queue_visibility_timeout_seconds,
-        max_receive_count=settings.queue_max_receive_count,
-        poll_interval=settings.queue_poll_interval_seconds,
-    )
+    storage = storage or build_storage(settings)
+    queue = queue or build_queue(settings)
 
     registry = CollectorRegistry()
     metrics = ApiMetrics(registry)

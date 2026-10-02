@@ -1,8 +1,8 @@
 """Object storage abstraction plus a filesystem implementation.
 
 Application code depends only on :class:`ObjectStorage`. ``LocalObjectStorage`` keeps objects as files
-under a root directory (``raw/...``, ``processed/...``). A cloud implementation can later be dropped in
-behind the same three methods without touching API or worker logic.
+under a root directory (``raw/...``, ``processed/...``). ``S3ObjectStorage`` implements the same three
+methods against a bucket, so API and worker logic never know which one they are talking to.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import re
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 
 class ObjectStorageError(Exception):
@@ -44,6 +46,15 @@ _KEY_PATTERN = re.compile(r"^[A-Za-z0-9._\-/]+$")
 _MAX_KEY_LENGTH = 512
 
 
+def validate_key(key: str) -> None:
+    """Reject keys that are unsafe on any backend (shared so local and S3 accept exactly the same keys)."""
+    if not isinstance(key, str) or not key or len(key) > _MAX_KEY_LENGTH or not _KEY_PATTERN.match(key):
+        raise InvalidObjectKeyError(f"invalid object key: {key!r}")
+    parts = key.split("/")
+    if any(part in ("", ".", "..") or part.startswith(".") for part in parts):
+        raise InvalidObjectKeyError(f"invalid object key: {key!r}")
+
+
 class LocalObjectStorage(ObjectStorage):
     def __init__(self, root: str | os.PathLike[str]) -> None:
         self._root = Path(root).expanduser().resolve()
@@ -54,11 +65,7 @@ class LocalObjectStorage(ObjectStorage):
         return self._root
 
     def _resolve(self, key: str) -> Path:
-        if not isinstance(key, str) or not key or len(key) > _MAX_KEY_LENGTH or not _KEY_PATTERN.match(key):
-            raise InvalidObjectKeyError(f"invalid object key: {key!r}")
-        parts = key.split("/")
-        if any(part in ("", ".", "..") or part.startswith(".") for part in parts):
-            raise InvalidObjectKeyError(f"invalid object key: {key!r}")
+        validate_key(key)
         path = (self._root / key).resolve()
         if self._root not in path.parents:
             raise InvalidObjectKeyError(f"object key escapes storage root: {key!r}")
@@ -97,4 +104,55 @@ class LocalObjectStorage(ObjectStorage):
         try:
             path.unlink(missing_ok=True)
         except (IsADirectoryError, PermissionError, OSError) as exc:
+            raise ObjectStorageError(f"failed to delete {key!r}: {exc}") from exc
+
+
+class S3ObjectStorage(ObjectStorage):
+    """Objects in an S3 bucket. Credentials come from the ambient AWS identity (IAM role, SSO, env)."""
+
+    def __init__(self, bucket: str, *, region: str | None = None, client=None) -> None:
+        if not bucket:
+            raise ValueError("bucket must not be empty")
+        self._bucket = bucket
+        if client is None:
+            import boto3
+            from botocore.config import Config
+
+            client = boto3.client(
+                "s3",
+                region_name=region,
+                config=Config(retries={"mode": "standard", "max_attempts": 5}, connect_timeout=5, read_timeout=30),
+            )
+        self._s3 = client
+
+    @property
+    def bucket(self) -> str:
+        return self._bucket
+
+    def put_object(self, key: str, data: bytes) -> None:
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise TypeError("data must be bytes-like")
+        validate_key(key)
+        try:
+            # A single PutObject is atomic: readers see the old object or the new one, never a partial write.
+            self._s3.put_object(Bucket=self._bucket, Key=key, Body=bytes(data), ServerSideEncryption="AES256")
+        except (BotoCoreError, ClientError) as exc:
+            raise ObjectStorageError(f"failed to write {key!r}: {exc}") from exc
+
+    def get_object(self, key: str) -> bytes:
+        validate_key(key)
+        try:
+            return self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                raise ObjectNotFoundError(key) from exc
+            raise ObjectStorageError(f"failed to read {key!r}: {exc}") from exc
+        except BotoCoreError as exc:
+            raise ObjectStorageError(f"failed to read {key!r}: {exc}") from exc
+
+    def delete_object(self, key: str) -> None:
+        validate_key(key)
+        try:
+            self._s3.delete_object(Bucket=self._bucket, Key=key)  # S3 returns success for a missing key
+        except (BotoCoreError, ClientError) as exc:
             raise ObjectStorageError(f"failed to delete {key!r}: {exc}") from exc

@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
@@ -45,6 +46,14 @@ class Settings(BaseSettings):
     worker_metrics_port: int = Field(default=9101, ge=0, le=65535)
     simulate_failure_rate: float = Field(default=0.0, ge=0.0, le=1.0)
 
+    # --- Backends: local (default, no AWS needed) or AWS ---------------------------------------
+    storage_backend: Literal["local", "s3"] = "local"
+    queue_backend: Literal["local", "sqs"] = "local"
+    aws_region: str | None = None
+    s3_bucket: str | None = None
+    sqs_queue_url: str | None = None
+    sqs_dlq_url: str | None = None
+
     @field_validator("database_url")
     @classmethod
     def _normalize_url(cls, value: str) -> str:
@@ -60,6 +69,21 @@ class Settings(BaseSettings):
         if level not in _LOG_LEVELS:
             raise ValueError(f"LOG_LEVEL must be one of {sorted(_LOG_LEVELS)}")
         return level
+
+    @model_validator(mode="after")
+    def _require_backend_settings(self) -> "Settings":
+        missing: list[str] = []
+        if self.storage_backend == "s3" and not self.s3_bucket:
+            missing.append("S3_BUCKET (required when STORAGE_BACKEND=s3)")
+        if self.queue_backend == "sqs":
+            for name, value in (("SQS_QUEUE_URL", self.sqs_queue_url), ("SQS_DLQ_URL", self.sqs_dlq_url)):
+                if not value:
+                    missing.append(f"{name} (required when QUEUE_BACKEND=sqs)")
+        if (self.storage_backend == "s3" or self.queue_backend == "sqs") and not self.aws_region:
+            missing.append("AWS_REGION (required when using S3 or SQS)")
+        if missing:
+            raise ValueError("; ".join(missing))
+        return self
 
     @property
     def numeric_log_level(self) -> int:
