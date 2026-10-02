@@ -15,6 +15,8 @@ from pathlib import Path
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from app.services.aws import create_client
+
 
 class ObjectStorageError(Exception):
     """Base class for storage failures."""
@@ -110,19 +112,14 @@ class LocalObjectStorage(ObjectStorage):
 class S3ObjectStorage(ObjectStorage):
     """Objects in an S3 bucket. Credentials come from the ambient AWS identity (IAM role, SSO, env)."""
 
-    def __init__(self, bucket: str, *, region: str | None = None, client=None) -> None:
+    def __init__(
+        self, bucket: str, *, region: str | None = None, profile: str | None = None, client=None
+    ) -> None:
         if not bucket:
             raise ValueError("bucket must not be empty")
         self._bucket = bucket
         if client is None:
-            import boto3
-            from botocore.config import Config
-
-            client = boto3.client(
-                "s3",
-                region_name=region,
-                config=Config(retries={"mode": "standard", "max_attempts": 5}, connect_timeout=5, read_timeout=30),
-            )
+            client = create_client("s3", region=region, profile=profile, read_timeout=30)
         self._s3 = client
 
     @property
