@@ -346,3 +346,38 @@ def test_stale_handle_redelivery_is_harmless_because_the_claim_is_atomic(aws_pip
     assert store.get_object(doc.processed_object_key) == serialize(
         generate_embeddings(document_id=doc_id, filename="doc.txt", data=b"payload " * 100)
     )
+
+
+# ------------------------------------------------------------------ AWS profile (assume-role) plumbing
+def test_profile_is_passed_through_to_boto3(monkeypatch, sqs_urls, s3_store):
+    seen: list[str | None] = []
+    real_session = boto3.Session
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("profile_name"))
+        kwargs["profile_name"] = None  # the profile does not exist here; keep moto's fake credentials
+        return real_session(*args, **kwargs)
+
+    monkeypatch.setattr(boto3, "Session", spy)
+    main, dlq = sqs_urls
+    s = _settings(
+        storage_backend="s3", queue_backend="sqs", aws_region=REGION, aws_profile="vectorpipe-dev",
+        s3_bucket=BUCKET, sqs_queue_url=main, sqs_dlq_url=dlq,
+    )
+    build_storage(s)
+    build_queue(s)
+    assert seen == ["vectorpipe-dev", "vectorpipe-dev"]
+
+
+def test_no_profile_means_boto3_default_chain(monkeypatch, sqs_urls):
+    seen: list[str | None] = []
+    real_session = boto3.Session
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("profile_name"))
+        return real_session(*args, **kwargs)
+
+    monkeypatch.setattr(boto3, "Session", spy)
+    main, dlq = sqs_urls
+    build_queue(_settings(queue_backend="sqs", aws_region=REGION, sqs_queue_url=main, sqs_dlq_url=dlq))
+    assert seen == [None]

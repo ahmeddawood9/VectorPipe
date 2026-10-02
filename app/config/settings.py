@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     storage_backend: Literal["local", "s3"] = "local"
     queue_backend: Literal["local", "sqs"] = "local"
     aws_region: str | None = None
+    # Named profile in ~/.aws/config (e.g. one that assumes the vectorpipe-dev role). Unset = boto3's default chain.
+    aws_profile: str | None = None
     s3_bucket: str | None = None
     sqs_queue_url: str | None = None
     sqs_dlq_url: str | None = None

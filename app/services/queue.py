@@ -34,6 +34,8 @@ from pathlib import Path
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from app.services.aws import create_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -311,6 +313,7 @@ class SqsQueue(Queue):
         dlq_url: str,
         *,
         region: str | None = None,
+        profile: str | None = None,
         visibility_timeout: float = 30.0,
         max_receive_count: int = 3,
         poll_chunk_seconds: float = 2.0,
@@ -331,18 +334,8 @@ class SqsQueue(Queue):
         self._stats_cache_seconds = stats_cache_seconds
         self._stats_cache: tuple[float, QueueStats] | None = None
         if client is None:
-            import boto3
-            from botocore.config import Config
-
-            client = boto3.client(
-                "sqs",
-                region_name=region,
-                config=Config(
-                    retries={"mode": "standard", "max_attempts": 5},
-                    connect_timeout=5,
-                    read_timeout=_SQS_MAX_WAIT + 10,  # must exceed the long-poll wait
-                ),
-            )
+            # read_timeout must exceed the long-poll wait
+            client = create_client("sqs", region=region, profile=profile, read_timeout=_SQS_MAX_WAIT + 10)
         self._sqs = client
         if verify_redrive:
             self._check_redrive_policy()

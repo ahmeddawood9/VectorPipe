@@ -177,6 +177,16 @@ Inspect dead-lettered messages: `sqlite3 storage/queue/queue.sqlite3 "select * f
 Set `STORAGE_BACKEND=s3` and/or `QUEUE_BACKEND=sqs` plus the variables above. Each can be switched
 independently. No keys go in `.env`: boto3 uses the ambient identity (IAM role, SSO, `AWS_PROFILE`).
 
+* To run locally as the Terraform-created `vectorpipe-dev` role, add a profile to `~/.aws/config` and set
+  `AWS_PROFILE=vectorpipe-dev` in `.env` (the app passes it to boto3 explicitly; boto3 assumes the role and
+  refreshes its temporary credentials by itself):
+
+  ```ini
+  [profile vectorpipe-dev]
+  role_arn       = <terraform output dev_role_arn>
+  source_profile = default          # the profile holding your IAM user's keys
+  region         = us-east-1
+  ```
 * The SQS queue must have a **redrive policy** pointing at the DLQ; SQS itself does the dead-lettering. Its
   `maxReceiveCount` must equal `QUEUE_MAX_RECEIVE_COUNT` (startup fails without a policy and warns on a mismatch).
 * Required IAM: S3 `GetObject`/`PutObject`/`DeleteObject` on the bucket; SQS `SendMessage` (API),
