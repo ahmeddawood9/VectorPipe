@@ -11,7 +11,8 @@ account, credentials or network access needed — and switches to **S3 + SQS** w
 [Running against AWS](#running-against-aws) and [Infrastructure](#infrastructure)).
 
 **Contents:** [Install](#1-install) · [Docker](#run-with-docker) · [API](#api) ·
-[Reliability](#reliability-design) · [Infrastructure](#infrastructure) · [Layout](#layout)
+[Reliability](#reliability-design) · [Infrastructure](#infrastructure) · [Layout](#layout) ·
+[Step-by-step docs](docs/README.md)
 
 ```
 Client ──▶ FastAPI API ──┬─▶ local object storage   storage/raw/<id>
@@ -224,7 +225,7 @@ terraform output                               # values for .env
 Requires Terraform >= 1.10 and AWS credentials allowed to manage S3, SQS, ECR and IAM. See
 [`terraform/bootstrap/README.md`](terraform/bootstrap/README.md) for first-time setup.
 `max_receive_count` and `visibility_timeout_seconds` must match `QUEUE_MAX_RECEIVE_COUNT` and
-`QUEUE_VISIBILITY_TIMEOUT_SECONDS`. `.github/workflows/` and `docs/` are placeholders for CI and runbooks.
+`QUEUE_VISIBILITY_TIMEOUT_SECONDS`. `.github/workflows/` is a placeholder for CI. The build history, step by step, is in [`docs/`](docs/README.md).
 
 **Verified on AWS:** as the `vectorpipe-dev` role, the full upload → `COMPLETED` flow (objects in S3,
 message acknowledged), and a job failing 3 times that ended `FAILED` with SQS moving it to the DLQ.
@@ -239,5 +240,6 @@ app/models     SQLAlchemy models        app/schemas   Pydantic schemas
 app/db         engine/session           app/config    settings + logging
 app/metrics    Prometheus metrics       migrations/   Alembic
 tests/         pytest suite             storage/      raw/ processed/ (runtime data)
+docs/          step-by-step build history (docs/steps/)
 terraform/     state bootstrap + foundation layer (S3, SQS + DLQ, ECR, IAM)
 ```
