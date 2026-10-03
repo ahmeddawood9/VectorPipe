@@ -74,7 +74,7 @@ set), `QUEUE_VISIBILITY_TIMEOUT_SECONDS=20`, `PROCESSING_DELAY_SECONDS=10`.
 | 0 s | worker 1 receives the job (receive_count 1); row `PROCESSING`, attempts 1 |
 | ~3 s | worker 1 gets **SIGKILL** mid-job: no graceful shutdown, no acknowledgement, row left `PROCESSING` |
 | ~21 s | visibility timeout expires; SQS redelivers to worker 2 (receive_count 2). The row is older than the stale threshold (0.8 × 20 s = 16 s), so worker 2 reclaims it: `PROCESSING`, attempts 2 |
-| ~31 s | worker 2 finishes: `COMPLETED`, attempts 2; raw and processed objects in S3; queue empty, DLQ empty |
+| ~34 s | worker 2 finishes: `COMPLETED`, attempts 2; raw and processed objects in S3; queue empty, DLQ empty |
 
 The job was not lost, not dead-lettered and not processed twice to completion.
 
