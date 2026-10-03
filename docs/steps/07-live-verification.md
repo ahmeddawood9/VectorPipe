@@ -1,6 +1,6 @@
 # Step 7 — Verification on live AWS
 
-**Date:** 2026-10-03 · **Commits:** none (operational step; results recorded here and in the README)
+**Dates:** 2026-10-03 (runs 1–3), 2026-10-04 (runs 4–6) · **Commits:** none (operational step; results recorded here and in the README)
 
 ## Goal
 
@@ -63,8 +63,36 @@ messages.
 5. Inspect with `aws s3 ls s3://<bucket>/ --recursive --profile vectorpipe-dev`.
    (The role cannot read the DLQ; use your own user for `aws sqs receive-message` on it.)
 
+## 4. Worker killed mid-job (crash recovery)
+
+Setup changes for this run and the next two: **PostgreSQL 15** (throwaway container), **two workers**,
+credentials from **`AWS_PROFILE=vectorpipe-dev`** in the real `~/.aws/config` (no `AWS_*` variables
+set), `QUEUE_VISIBILITY_TIMEOUT_SECONDS=20`, `PROCESSING_DELAY_SECONDS=10`.
+
+| Time | Event |
+|---|---|
+| 0 s | worker 1 receives the job (receive_count 1); row `PROCESSING`, attempts 1 |
+| ~3 s | worker 1 gets **SIGKILL** mid-job: no graceful shutdown, no acknowledgement, row left `PROCESSING` |
+| ~21 s | visibility timeout expires; SQS redelivers to worker 2 (receive_count 2). The row is older than the stale threshold (0.8 × 20 s = 16 s), so worker 2 reclaims it: `PROCESSING`, attempts 2 |
+| ~31 s | worker 2 finishes: `COMPLETED`, attempts 2; raw and processed objects in S3; queue empty, DLQ empty |
+
+The job was not lost, not dead-lettered and not processed twice to completion.
+
+## 5. Flow on PostgreSQL with two workers
+
+Six documents uploaded at once to two workers: all six `COMPLETED` with attempts 1 within about
+30 s, split 3/3 between the workers (each SQS message went to exactly one worker). Database:
+`COMPLETED|1|6` plus the crash-test row `COMPLETED|2|1`. Queue and DLQ empty afterwards.
+
+## 6. `AWS_PROFILE` against the real `~/.aws/config`
+
+Both workers logged `storage_backend=s3 queue_backend=sqs`, and every AWS call above went through
+the `vectorpipe-dev` profile, so boto3 assumed the role from `role_arn` + `source_profile` itself.
+
+All test objects were deleted afterwards and the container removed.
+
 ## Not covered yet
 
-* PostgreSQL instead of SQLite on the live run.
-* Killing a worker mid-job on AWS (visibility-timeout redelivery + stale-claim reclaim are only
-  covered by local tests).
+* Running the app in containers on a cluster (EKS) with workload IAM roles instead of the dev role.
+* A worker killed while its job is already near the visibility timeout under real embedding load
+  (here the job took 10 s against a 20 s timeout).
