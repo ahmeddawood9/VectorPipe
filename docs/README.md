@@ -12,7 +12,7 @@ commit on `main` belongs to exactly one step.
 | 4 | [S3 and SQS backends in the app](steps/04-aws-backends.md) | 2026-10-02 | `5424e8f` `c95f4fc` |
 | 5 | [Running locally as an assumed IAM role](steps/05-assume-role-profile.md) | 2026-10-03 | `ad878c6` |
 | 6 | [Foundation infrastructure: S3, SQS + DLQ, ECR, IAM](steps/06-foundation-infrastructure.md) | 2026-10-03 | `6694942` `2d4de1e` `a960260` `a744c99` `cd9d729` `d648288` `8f2b9a7` `ede7fdc` `4bd2970` |
-| 7 | [Verification on live AWS](steps/07-live-verification.md) | 2026-10-03 | – (operational, no code change) |
+| 7 | [Verification on live AWS](steps/07-live-verification.md) | 2026-10-03, 2026-10-04 | – (operational, no code change) |
 
 ## Where things stand
 
@@ -28,7 +28,8 @@ Worker ◀──receive─────│ IAM api/worker policies, dev role     
 ```
 
 * The app runs locally by default and switches to S3 + SQS with two settings.
-* The infrastructure exists and was verified end to end, including the dead-letter path.
+* The infrastructure exists and was verified end to end on PostgreSQL with two workers, including
+  the dead-letter path and a worker killed mid-job (the job was redelivered and completed).
 * **Not yet done:** pushing an image to ECR, CI (`.github/workflows/` is a placeholder), running the
   app on a cluster (EKS), and a managed database.
 
