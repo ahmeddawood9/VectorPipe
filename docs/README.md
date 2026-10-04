@@ -13,6 +13,7 @@ commit on `main` belongs to exactly one step.
 | 5 | [Running locally as an assumed IAM role](steps/05-assume-role-profile.md) | 2026-10-03 | `ad878c6` |
 | 6 | [Foundation infrastructure: S3, SQS + DLQ, ECR, IAM](steps/06-foundation-infrastructure.md) | 2026-10-03 | `6694942` `2d4de1e` `a960260` `a744c99` `cd9d729` `d648288` `8f2b9a7` `ede7fdc` `4bd2970` |
 | 7 | [Verification on live AWS](steps/07-live-verification.md) | 2026-10-03, 2026-10-04 | – (operational, no code change) |
+| 8 | [CI: tests, and the image to ECR via GitHub OIDC](steps/08-ci-oidc.md) | 2026-10-04 | `08f8595` `2977c3f` + `terraform/ci.tf` |
 
 ## Where things stand
 
@@ -21,7 +22,7 @@ commit on `main` belongs to exactly one step.
 Client ─▶ API ──put──▶│ S3  vectorpipe-documents-<account>     │
            │          │       raw/<id>   processed/<id>.json   │
            └─enqueue─▶│ SQS vectorpipe-jobs ──3 fails──▶ DLQ   │
-                      │ ECR vectorpipe (image registry, empty) │
+                      │ ECR vectorpipe:<git-sha>  ◀── CI (OIDC) │
 Worker ◀──receive─────│ IAM api/worker policies, dev role      │
   └─ status ─▶ PostgreSQL (local)                              │
                       └────────────────────────────────────────┘
@@ -30,8 +31,8 @@ Worker ◀──receive─────│ IAM api/worker policies, dev role     
 * The app runs locally by default and switches to S3 + SQS with two settings.
 * The infrastructure exists and was verified end to end on PostgreSQL with two workers, including
   the dead-letter path and a worker killed mid-job (the job was redelivered and completed).
-* **Not yet done:** pushing an image to ECR, CI (`.github/workflows/` is a placeholder), running the
-  app on a cluster (EKS), and a managed database.
+* CI runs the tests on every push and, on `main`, pushes the image to ECR using GitHub OIDC.
+* **Not yet done:** running the app on a cluster (EKS) and a managed database.
 
 ## Conventions
 

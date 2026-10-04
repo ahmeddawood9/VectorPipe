@@ -211,7 +211,8 @@ with native locking and is never committed (`*.tfstate` is git-ignored).
 | `terraform/sqs.tf` | `vectorpipe-jobs` queue + `vectorpipe-jobs-dlq`; redrive after 3 receives, visibility 60 s |
 | `terraform/ecr.tf` | `vectorpipe` image repository: immutable tags, scan on push, keeps the last 10 images |
 | `terraform/iam.tf` | Least-privilege `vectorpipe-api` / `vectorpipe-worker` policies and the `vectorpipe-dev` role for local runs |
-| `terraform/outputs.tf` | Bucket, queue URLs, region, ECR URL, role and policy ARNs |
+| `terraform/ci.tf` | GitHub OIDC provider and the `vectorpipe-ci` role: only pushes to `main` of this repo (immutable subject with owner/repo ids) may push images to ECR |
+| `terraform/outputs.tf` | Bucket, queue URLs, region, ECR URL, role and policy ARNs, `ci_role_arn` (GitHub variable `AWS_ROLE_ARN`) |
 
 ```bash
 cd terraform
