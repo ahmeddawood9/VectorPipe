@@ -225,7 +225,8 @@ terraform output                               # values for .env
 Requires Terraform >= 1.10 and AWS credentials allowed to manage S3, SQS, ECR and IAM. See
 [`terraform/bootstrap/README.md`](terraform/bootstrap/README.md) for first-time setup.
 `max_receive_count` and `visibility_timeout_seconds` must match `QUEUE_MAX_RECEIVE_COUNT` and
-`QUEUE_VISIBILITY_TIMEOUT_SECONDS`. `.github/workflows/` is a placeholder for CI. The build history, step by step, is in [`docs/`](docs/README.md).
+`QUEUE_VISIBILITY_TIMEOUT_SECONDS`. CI (`.github/workflows/ci.yml`) runs the tests on every pull request and push; on `main` it also builds
+the image and pushes it to ECR, tagged with the commit SHA, using GitHub OIDC (no stored AWS keys). The build history, step by step, is in [`docs/`](docs/README.md).
 
 **Verified on AWS:** as the `vectorpipe-dev` role (via `AWS_PROFILE`), on PostgreSQL with two workers: the
 full upload → `COMPLETED` flow, a job failing 3 times that ended `FAILED` with SQS moving it to the DLQ, and a
