@@ -36,7 +36,9 @@ Worker ◀──receive─────│ IAM api/worker policies, dev role     
 * CI runs the tests on every push and, on `main`, pushes the image to ECR using GitHub OIDC.
 * Session layers: `network` (VPC, one NAT) and `data` (RDS PostgreSQL 15, private, reached through an
   SSM-only client). Created foundation → network → data, destroyed data → network.
-* **Not yet done:** migrations and the pipeline on RDS, and running the app on a cluster (EKS).
+* The pipeline ran end to end on RDS (migrations, upload → `COMPLETED`), then both session layers were
+  destroyed with no leftovers.
+* **Not yet done:** running the app on a cluster (EKS), and a least-privilege database user.
 
 ## Conventions
 

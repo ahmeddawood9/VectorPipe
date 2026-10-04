@@ -102,8 +102,27 @@ aws ec2 describe-instances --filters Name=instance-state-name,Values=running
 aws ec2 describe-addresses        # catches a leaked Elastic IP, which keeps billing
 ```
 
+## Proved end to end (2026-10-04)
+
+| Check | Result |
+|---|---|
+| SSM port-forward, local 5433 → RDS 5432 | tunnel opened through the client; no inbound ports anywhere |
+| `psql` login | `vectorpipe_admin` on `vectorpipe`, PostgreSQL 15.17, **SSL on** |
+| Migrations (`alembic upgrade head` via the tunnel) | `0001` applied; `\dt` shows `documents` and `alembic_version` |
+| Privacy check from the laptop, straight to the endpoint | resolves to `10.0.16.8` (private); TCP 5432 **timed out** after 5 s |
+| Full pipeline: local API + worker, RDS + live S3 + SQS (`AWS_PROFILE=vectorpipe-dev`) | one upload `COMPLETED` on attempt 1; row in RDS; raw and processed objects in S3; queue empty |
+| Tear down | `data` 10 destroyed, then `network` 19 destroyed |
+| Leak checks | RDS instances, available NATs, running instances, Elastic IPs: **all empty**; the RDS secret was deleted with the instance |
+
+Notes from the run:
+
+* The Session Manager plugin is needed for `aws ssm start-session`. Without root it can be extracted from
+  AWS's `.deb` (`bsdtar -xf session-manager-plugin.deb`, then the data archive) and put on `PATH`.
+* The app reads `DATABASE_URL`; build it with the password URL-encoded and `?sslmode=require`
+  (psycopg). Environment variables override `.env`.
+* The test document's S3 objects were deleted before tear down.
+
 ## Left open
 
-* Migrations, a `psql` connection and the full pipeline on RDS have not been run yet.
 * The app still connects as the master user; a separate least-privilege app user is a later step.
 * EKS workloads will need their own ingress rule on the DB security group (by SG ID).
