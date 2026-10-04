@@ -16,6 +16,24 @@ from app.services import LocalObjectStorage, LocalQueue
 from app.worker import JobProcessor, Worker
 from tests.helpers import FlakyQueue, FlakyStorage
 
+# Backend/AWS settings tests must choose explicitly; never inherit them from the shell or CI.
+_AMBIENT_SETTINGS = (
+    "STORAGE_BACKEND",
+    "QUEUE_BACKEND",
+    "AWS_REGION",
+    "AWS_PROFILE",
+    "S3_BUCKET",
+    "SQS_QUEUE_URL",
+    "SQS_DLQ_URL",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_from_ambient_settings(monkeypatch):
+    """CI sets AWS_REGION for the whole workflow; a developer may have AWS_PROFILE exported."""
+    for name in _AMBIENT_SETTINGS:
+        monkeypatch.delenv(name, raising=False)
+
 
 @pytest.fixture(scope="session")
 def database_url(tmp_path_factory) -> str:
