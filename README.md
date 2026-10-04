@@ -229,6 +229,13 @@ Requires Terraform >= 1.10 and AWS credentials allowed to manage S3, SQS, ECR an
 `QUEUE_VISIBILITY_TIMEOUT_SECONDS`. CI (`.github/workflows/ci.yml`) runs the tests on every pull request and push; on `main` it also builds
 the image and pushes it to ECR, tagged with the commit SHA, using GitHub OIDC (no stored AWS keys). The build history, step by step, is in [`docs/`](docs/README.md).
 
+**Network (`terraform/network/`).** VPC `10.0.0.0/16` in two AZs: public `/24`s for the load balancer and NAT,
+private `/20`s for EKS nodes and pods. **One NAT gateway, not one per AZ, is a deliberate cost trade-off:**
+the network is destroyed after every session and the budget is small, so an AZ outage costs nothing here. In
+production set `nat_per_az = true` (a one-variable change; the private route tables are already one per AZ).
+An S3 gateway endpoint keeps S3 traffic off the NAT, and subnet tags let the AWS Load Balancer Controller
+place load balancers without editing this layer.
+
 **Verified on AWS:** as the `vectorpipe-dev` role (via `AWS_PROFILE`), on PostgreSQL with two workers: the
 full upload → `COMPLETED` flow, a job failing 3 times that ended `FAILED` with SQS moving it to the DLQ, and a
 worker killed mid-job whose job was redelivered to the other worker and completed. Details:
