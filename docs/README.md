@@ -1,45 +1,42 @@
-# VectorPipe documentation
+# Build log
 
-How VectorPipe was built, one step at a time. Each step has its own page: what was done, why,
-how it works, how to verify it, and what was left open. The steps follow the git history, so every
-commit on `main` belongs to exactly one step.
+This folder is my build log for VectorPipe. I wanted a record of how the project actually came
+together: what I built at each stage, why I made the calls I made, what broke along the way and how
+I fixed it. The README at the root explains how to use the project. This explains how it got here.
 
-| # | Step | Date | Commits |
-|---|---|---|---|
-| 1 | [Application: API, worker, local storage and queue](steps/01-application.md) | 2026-10-01 | `e62c40a` |
-| 2 | [Containerization: Docker and docker-compose](steps/02-containerization.md) | 2026-10-01 | `8e8d132` |
-| 3 | [Terraform remote state bootstrap](steps/03-terraform-state-bootstrap.md) | 2026-10-02 | `f927c7a` `39d2428` `69681ef` |
-| 4 | [S3 and SQS backends in the app](steps/04-aws-backends.md) | 2026-10-02 | `5424e8f` `c95f4fc` |
-| 5 | [Running locally as an assumed IAM role](steps/05-assume-role-profile.md) | 2026-10-03 | `ad878c6` |
-| 6 | [Foundation infrastructure: S3, SQS + DLQ, ECR, IAM](steps/06-foundation-infrastructure.md) | 2026-10-03 | `6694942` `2d4de1e` `a960260` `a744c99` `cd9d729` `d648288` `8f2b9a7` `ede7fdc` `4bd2970` |
-| 7 | [Verification on live AWS](steps/07-live-verification.md) | 2026-10-03, 2026-10-04 | – (operational, no code change) |
-| 8 | [CI: tests, and the image to ECR via GitHub OIDC](steps/08-ci-oidc.md) | 2026-10-04 | `08f8595` `2977c3f` + `terraform/ci.tf` |
-| 9 | [Network layer: VPC, two AZs, one NAT](steps/09-network.md) | 2026-10-04 | `81e1518` |
-| 10 | [Data layer: RDS PostgreSQL and an SSM-only test client](steps/10-data-layer.md) | 2026-10-04 | `terraform/data/` |
+Each step is one page. The commits on `main` line up with the steps, so you can read a page and then
+look at the commits it mentions to see the actual change.
 
-## Where things stand
+| # | Step | When |
+|---|---|---|
+| 1 | [The app: API, worker, local storage and queue](steps/01-application.md) | Oct 1 |
+| 2 | [Docker and docker-compose](steps/02-containerization.md) | Oct 1 |
+| 3 | [Somewhere safe for Terraform state](steps/03-terraform-state-bootstrap.md) | Oct 2 |
+| 4 | [Teaching the app to talk to S3 and SQS](steps/04-aws-backends.md) | Oct 2 |
+| 5 | [Running locally as a real IAM role](steps/05-assume-role-profile.md) | Oct 3 |
+| 6 | [The foundation: S3, SQS, ECR and IAM](steps/06-foundation-infrastructure.md) | Oct 3 |
+| 7 | [Proving it on real AWS](steps/07-live-verification.md) | Oct 3–4 |
+| 8 | [CI and pushing images without AWS keys](steps/08-ci-oidc.md) | Oct 4 |
+| 9 | [The network](steps/09-network.md) | Oct 4 |
+| 10 | [RDS, and a client nobody can SSH into](steps/10-data-layer.md) | Oct 4 |
+
+## Where it stands
 
 ```
-                      ┌──────────── AWS us-east-1 ────────────┐
-Client ─▶ API ──put──▶│ S3  vectorpipe-documents-<account>     │
-           │          │       raw/<id>   processed/<id>.json   │
-           └─enqueue─▶│ SQS vectorpipe-jobs ──3 fails──▶ DLQ   │
-                      │ ECR vectorpipe:<git-sha>  ◀── CI (OIDC) │
-Worker ◀──receive─────│ IAM api/worker policies, dev role      │
-  └─ status ─▶ PostgreSQL (local)                              │
-                      └────────────────────────────────────────┘
+                      ┌──────────────── AWS us-east-1 ────────────────┐
+Client ─▶ API ──put──▶│ S3   vectorpipe-documents-<account>            │
+           │          │        raw/<id>   processed/<id>.json          │
+           └─enqueue─▶│ SQS  vectorpipe-jobs ──3 failures──▶ DLQ        │
+Worker ◀──receive─────│ ECR  vectorpipe:<git-sha>   ◀── GitHub Actions  │
+  └─ status ─▶ Postgres (local, or RDS while the data layer is up)      │
+                      └────────────────────────────────────────────────┘
 ```
 
-* The app runs locally by default and switches to S3 + SQS with two settings.
-* The infrastructure exists and was verified end to end on PostgreSQL with two workers, including
-  the dead-letter path and a worker killed mid-job (the job was redelivered and completed).
-* CI runs the tests on every push and, on `main`, pushes the image to ECR using GitHub OIDC.
-* Session layers: `network` (VPC, one NAT) and `data` (RDS PostgreSQL 15, private, reached through an
-  SSM-only client). Created foundation → network → data, destroyed data → network.
-* The pipeline ran end to end on RDS (migrations, upload → `COMPLETED`), then both session layers were
-  destroyed with no leftovers.
-* **Not yet done:** running the app on a cluster (EKS), and a least-privilege database user.
+The foundation (S3, SQS, ECR, IAM) stays up all the time because it costs nothing while idle. The
+network and the database are session layers: I build them when I need them and destroy them when I'm
+done, because the NAT gateway and RDS bill by the hour.
 
-## Conventions
+What's next: running the app on EKS, and giving it a database user of its own instead of the master
+user.
 
-See [DOCS_INSTRUCTIONS.md](DOCS_INSTRUCTIONS.md) for how to add the next step.
+How I keep this log is in [DOCS_INSTRUCTIONS.md](DOCS_INSTRUCTIONS.md).

@@ -1,68 +1,85 @@
-# Step 1 — Application: API, worker, local storage and queue
+# Step 1: The app
 
-**Date:** 2026-10-01 · **Commit:** `e62c40a` Add application code
+*October 1. Commit: "Add application code".*
 
-## Goal
+## What I was trying to do
 
-A document-ingestion pipeline where the API accepts uploads instantly and the expensive work
-(embedding generation) happens in separate, independently scalable worker processes. It had to run
-entirely on one machine with no cloud account.
+I wanted a document ingestion pipeline where uploading is instant and the slow part, generating
+embeddings, happens somewhere else. The API should never do the heavy lifting. Workers should be
+separate processes that I can start, stop and run as many of as I like.
 
-## What was built
+I also wanted the whole thing to run on my laptop with no cloud account, so I could build and test
+it properly before paying for anything.
 
-| Area | Files | Role |
-|---|---|---|
-| API | `app/api/` | FastAPI: `POST /documents` (202), `GET /documents/{id}`, `/result`, `/stats`, `/health`, `/metrics`, dashboard at `/` |
-| Worker | `app/worker/` | `runner.py` polls the queue; `processor.py` claims → processes → completes → acknowledges; `embedding.py` produces deterministic fake embeddings |
-| Interfaces | `app/services/object_storage.py`, `app/services/queue.py` | `ObjectStorage` (put/get/delete) and `Queue` (enqueue/receive/delete/change_visibility/stats) |
-| Local implementations | same files | `LocalObjectStorage` (files under `storage/`) and `LocalQueue` (SQLite file with SQS-like semantics) |
-| Database | `app/db/`, `app/models/`, `migrations/` | PostgreSQL via SQLAlchemy 2 + Alembic; one `documents` table holding status |
-| Config | `app/config/` | Pydantic settings from env / `.env`; JSON structured logs |
-| Metrics | `app/metrics/` | Prometheus for the API and for each worker |
-| Tests | `tests/` | 122 tests on temporary SQLite + temp dirs, no external services |
+## What I built
 
-## How a document flows
+**The API** (`app/api/`) is FastAPI. `POST /documents` takes a file, stores it, writes a database row
+and puts a job on a queue, then returns `202` straight away. There are endpoints to check the status
+and fetch the result, plus `/health`, Prometheus `/metrics`, `/stats`, and a small dashboard at `/`.
+
+**The worker** (`app/worker/`) pulls jobs off the queue. For each one it claims the document, reads
+the raw file, does the "embedding" work and writes the result. The embeddings are fake but
+deterministic, and there's a configurable delay standing in for the real model.
+
+**Two interfaces hold it together.** `ObjectStorage` (put, get, delete) and `Queue` (enqueue,
+receive, delete, change visibility, stats). The API and worker only ever talk to these. For local
+work there's `LocalObjectStorage`, which is just files under `storage/`, and `LocalQueue`, a SQLite
+file that behaves like SQS: visibility timeouts, receive counts and dead-lettering.
+
+That decision turned out to be the most important one in the project. When I moved to AWS later, I
+only had to write new implementations of the two interfaces. Nothing else changed.
+
+**Postgres** holds each document's status, through SQLAlchemy 2 and Alembic migrations.
+
+## How a document moves through it
 
 ```
-POST /documents ─▶ storage.put_object(raw/<id>)
-                ─▶ INSERT documents (status PENDING)
-                ─▶ queue.enqueue({document_id})
+POST /documents ─▶ save raw/<id>
+                ─▶ insert row, status PENDING
+                ─▶ enqueue {document_id}
                 ─▶ 202 {id, status}
 
-worker: receive ─▶ claim (PENDING → PROCESSING, one conditional UPDATE)
-               ─▶ read raw/<id> ─▶ embed ─▶ put processed/<id>.json
-               ─▶ status COMPLETED ─▶ queue.delete (acknowledge, only now)
+worker ─▶ receive a job
+       ─▶ claim it: PENDING → PROCESSING (one conditional UPDATE)
+       ─▶ read raw/<id>, embed, write processed/<id>.json
+       ─▶ status COMPLETED
+       ─▶ delete the message (only now)
 ```
 
-If the insert or the enqueue fails after the upload, the API removes what it already wrote and
-returns 503, so no half-submitted documents remain.
+If saving the row or queueing the job fails after the upload, the API cleans up what it already wrote
+and returns `503`, so I never end up with half-submitted documents.
 
-## Key design decisions
+## Decisions I care about
 
-* **The app depends only on the two interfaces.** That decision is what made Step 4 a plug-in job
-  instead of a rewrite.
-* **At-least-once delivery, idempotent processing.** A message is deleted only after the row is
-  `COMPLETED`. A duplicate delivery of a finished document is acknowledged without reprocessing.
-  Results have a deterministic key and bytes, so re-running is harmless.
-* **The atomic claim prevents double work.** Of N workers racing for one document, exactly one
-  wins the conditional `UPDATE`.
-* **Failures use the queue's retry mechanics.** The message is not acknowledged; its visibility is
-  set to an exponential backoff; after `QUEUE_MAX_RECEIVE_COUNT` (3) attempts the row becomes
-  `FAILED` and the message is dead-lettered.
-* **Crashed workers are recovered.** A `PROCESSING` row untouched for 0.8× the visibility timeout
-  counts as abandoned and is reclaimed when the message is redelivered.
-* **Graceful shutdown.** SIGTERM finishes the current job; a second signal exits immediately.
+**The message is deleted last.** Delivery is at-least-once, so the worker only acknowledges a job
+once the row says `COMPLETED`. If it crashes anywhere before that, the job comes back.
 
-## How to verify
+**Claiming is atomic.** If several workers grab the same document, a single conditional `UPDATE`
+means exactly one of them wins. The others back off. This is what really prevents double work, and
+it mattered a lot later on SQS.
+
+**Duplicates are harmless.** If a finished document's job shows up again, the worker just
+acknowledges it. Results have a fixed key and identical bytes, so redoing one changes nothing.
+
+**Failures retry with backoff.** A failed job isn't acknowledged. Its visibility is pushed out with an
+exponential backoff. After three attempts the row is marked `FAILED` and the message is dead-lettered.
+
+**Crashed workers get cleaned up.** If a worker dies mid-job, its row is stuck at `PROCESSING`. When
+the message comes back after the visibility timeout, a row that hasn't moved for 80% of that timeout
+counts as abandoned, and the new worker takes it over.
+
+**Shutdown is graceful.** `SIGTERM` lets the current job finish. A second signal exits immediately.
+
+## Checking it
 
 ```bash
 pip install -r requirements.txt
-pytest -q                    # all tests, no services needed
-alembic upgrade head && python -m app.api     # terminal 1
-python -m app.worker                          # terminal 2
+pytest -q                                        # 122 tests, no services needed
+alembic upgrade head && python -m app.api        # terminal 1
+python -m app.worker                             # terminal 2
 curl -F "file=@report.pdf" http://127.0.0.1:8000/documents
 ```
 
-## Left open
+## Still open
 
-No cloud implementations of the interfaces (added in [Step 4](04-aws-backends.md)).
+Everything is local. No cloud versions of storage or the queue yet.

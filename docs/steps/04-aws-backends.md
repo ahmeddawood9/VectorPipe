@@ -1,89 +1,85 @@
-# Step 4 — S3 and SQS backends in the app
+# Step 4: Teaching the app to talk to S3 and SQS
 
-**Date:** 2026-10-02 · **Commits:**
-`5424e8f` Add S3 and SQS backends selectable by settings ·
-`c95f4fc` Document the S3/SQS backends and AWS setup
+*October 2. Commits: "Add S3 and SQS backends selectable by settings", "Document the S3/SQS backends
+and AWS setup".*
 
-## Goal
+## What I was trying to do
 
-Let the app use Amazon S3 and SQS instead of local files and SQLite, without changing the API or
-worker logic, and without breaking the local default.
+Use S3 instead of local files and SQS instead of the SQLite queue, without touching the API or worker
+logic, and without breaking local development.
 
-## Mental model: plugs and sockets
+## How I thought about it
+
+Think of the two interfaces from step 1 as sockets. Local storage and the local queue were the only
+plugs. I just needed a second plug for each:
 
 ```
 ObjectStorage ──┬── LocalObjectStorage   (files)
-                └── S3ObjectStorage      (S3 bucket)        ← new
+                └── S3ObjectStorage      (S3)
 Queue ──────────┬── LocalQueue           (SQLite)
-                └── SqsQueue             (SQS + DLQ)        ← new
+                └── SqsQueue             (SQS + DLQ)
 ```
 
-Routes and the processor only hold the interface, so `documents.py`, `processor.py` and
-`runner.py` did not change.
+The routes and the worker only hold the socket, so `documents.py`, `processor.py` and `runner.py`
+didn't change at all.
 
-## What was built
+## What I built
 
-**`S3ObjectStorage`** (`app/services/object_storage.py`)
+**`S3ObjectStorage`** does put, get and delete with server-side encryption, retries and timeouts. A
+missing key raises `ObjectNotFoundError`, the same as locally. Anything else, like a missing bucket,
+raises a general storage error. I moved key validation into a shared function, so both backends accept
+and reject exactly the same keys.
 
-* put/get/delete with `ServerSideEncryption="AES256"`, standard retries, timeouts.
-* `NoSuchKey` → `ObjectNotFoundError`; any other error (e.g. missing bucket) → `ObjectStorageError`.
-* Key validation moved into a shared `validate_key()`, so both backends accept the same keys.
+**`SqsQueue`** maps each queue call onto SQS:
 
-**`SqsQueue`** (`app/services/queue.py`)
-
-| App call | SQS call |
+| App | SQS |
 |---|---|
-| `enqueue` | `send_message` |
-| `receive` | `receive_message` with `MessageSystemAttributeNames` (the non-deprecated name), max 10 per batch, long-polled in short chunks so SIGTERM is noticed promptly |
-| `delete` | `delete_message` |
-| `change_visibility` | `change_message_visibility` (clamped to 12 h) |
-| `stats` | `get_queue_attributes` on the queue **and** the DLQ (cached 5 s) |
+| enqueue | `send_message` |
+| receive | `receive_message`, up to 10 at a time, long-polling in short chunks so the worker still notices `SIGTERM` quickly |
+| delete | `delete_message` |
+| change visibility | `change_message_visibility` (SQS caps it at 12 hours) |
+| stats | `get_queue_attributes` on the queue and on the DLQ, cached for 5 seconds |
 
-**Settings and wiring**
+**Two settings pick the backend**: `STORAGE_BACKEND` (`local` or `s3`) and `QUEUE_BACKEND` (`local`
+or `sqs`), plus the region, bucket and queue URLs. Local is the default. If you choose AWS and forget
+a value, the app refuses to start and tells you which one is missing. A small factory builds the right
+classes, and the API and worker both use it.
 
-* `STORAGE_BACKEND` (`local`/`s3`), `QUEUE_BACKEND` (`local`/`sqs`), `AWS_REGION`, `S3_BUCKET`,
-  `SQS_QUEUE_URL`, `SQS_DLQ_URL`. Missing fields for a chosen backend fail at startup.
-* `app/services/factory.py` (`build_storage`, `build_queue`) replaces the hardcoded local classes
-  in `app/api/main.py` and `app/worker/__main__.py`.
+## Things I had to get right
 
-## Key design decisions
+**SQS does the dead-lettering now, not my code.** Locally, my queue moved failed messages itself. On
+AWS the queue's redrive policy does it. But the worker still needs to know which attempt is the last
+one, so the app and the redrive policy have to agree on the number (3). At startup `SqsQueue` reads the
+policy. If there isn't one, it fails. If the number is different, it warns.
 
-* **SQS does the dead-lettering.** Locally `LocalQueue` dead-letters; on AWS the queue's redrive
-  policy does. The app must agree on the number (3) to know which attempt is final, so `SqsQueue`
-  reads the redrive policy at startup: no policy is an error, a different count is a warning.
-* **`delete() == True` does not prove the message is gone.** SQS cannot detect a stale receipt
-  handle, so a delete after redelivery can succeed without removing anything. Correctness comes
-  from the atomic claim of Step 1, and a test proves it (below).
-* **No credentials in the app.** boto3 uses the ambient identity (role, SSO, profile).
-* **Rejected for now:** presigned URLs. They change the interface and API response, and were not
-  needed to get the app working on S3 and SQS.
+**On SQS, a successful delete doesn't prove the message is gone.** If a message has been redelivered,
+deleting it with the old receipt handle can "succeed" without removing anything. That sounds scary,
+but the atomic claim from step 1 covers it. I wrote a test that delivers the same job twice with
+different handles and checks that the document ends up `COMPLETED` once, with the right result.
 
-## Tests
+**No AWS keys in the app.** boto3 uses whatever identity it finds: a role, SSO or a profile.
 
-`tests/test_aws_backends.py` runs against **moto** (in-process fake AWS, no account needed):
+**I left out presigned URLs.** They'd change the interface and the API response, and I didn't need
+them to get onto S3 and SQS. Maybe later.
 
-* The same contract tests run on the local and the AWS implementation of each interface.
-* S3: encryption at rest, error mapping. SQS: batch cap, long-poll wake-up, invalid handles,
-  missing redrive policy, count-mismatch warning, stats cache.
-* Redelivery uses `change_visibility(0)` instead of sleeping, to keep the suite fast and stable.
-* **Duplicate delivery:** one job is delivered twice with different receipt handles; the first is
-  `COMPLETED`, the second `DUPLICATE`, the row has `attempts == 1` and a correct result.
-* While writing these tests, a real bug surfaced: SQS omits the `Attributes` key when the requested
-  attribute is unset. It was fixed before the commit.
+## Testing without AWS
 
-Result: 173 passed (122 existing, 51 new).
+`tests/test_aws_backends.py` runs on moto, which fakes S3 and SQS in memory. The same contract tests
+run against the local and the AWS version of each interface, so the two must behave the same. To
+retry a message I set its visibility to 0 instead of sleeping, which keeps the suite fast and stable.
 
-## How to verify
+Writing these tests caught a real bug. When none of the requested attributes are set, SQS leaves the
+`Attributes` key out of the response completely, and my redrive check crashed on it. I fixed it before
+committing.
 
-```bash
-pip install -r requirements.txt     # boto3, moto
-pytest -q tests/test_aws_backends.py
-```
+Result: 173 tests passing, 51 of them new.
 
-If `pytest` fails with `No module named 'botocore'`, the active virtualenv is not the one the
-requirements were installed into (`which pytest` shows which one is used).
+## A setup trap I hit
 
-## Left open
+I ran `pytest` and got `No module named 'botocore'`. I had activated a different virtualenv, one level
+up, which didn't have the new packages. `which pytest` tells you which one you're using.
 
-Moto does not enforce IAM, so missing permissions could only show up on real AWS (checked in
-[Step 7](07-live-verification.md)).
+## Still open
+
+moto doesn't check IAM permissions, so a missing permission would only show up on real AWS. I tested
+that in step 7.

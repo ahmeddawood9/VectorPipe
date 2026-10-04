@@ -1,26 +1,19 @@
-# Documentation Instructions
+# How I keep this log
 
-This directory documents how VectorPipe was built, step by step, and will also hold deployment
-guides, architecture runbooks and operational documentation.
+One page per step, in `docs/steps/NN-short-name.md`, plus a row in the table in
+[README.md](README.md).
 
-## Structure
+A page answers four things, roughly in this order:
 
-```
-docs/
-  README.md                 index: every step, its date and its commits
-  steps/NN-short-name.md    one page per step
-```
+1. **What I was trying to do**, in a sentence or two.
+2. **What I built**, with enough detail that I could rebuild it from the page.
+3. **What went wrong and what I decided**, because that's the part I'll actually want to remember.
+4. **How to check it works**, as commands I can copy.
 
-## Adding a step
+I end with what's still open, so the next step has somewhere to start.
 
-Every commit on `main` belongs to exactly one step. When you finish a piece of work:
+A few rules I try to stick to:
 
-1. Create `steps/NN-short-name.md` with the next number.
-2. Use these sections: **Goal**, **What was built**, **Key design decisions** (or "How it got
-   here" for problems met along the way), **How to verify**, **Left open**.
-3. Head the page with the date and the commit hashes with their subjects.
-4. Add a row to the table in [README.md](README.md) and update "Where things stand".
-5. Commit the doc with the work, or straight after it.
-
-Write facts that were checked. If something was not verified, say so under **Left open**.
-Never put account secrets in docs: use `<account-id>` and `<bucket>` placeholders.
+- Only write down things I actually checked. If I didn't verify something, I say so.
+- Refer to commits by their title, not their hash.
+- Never put secrets in here. Account IDs and bucket names become `<account-id>` and `<bucket>`.

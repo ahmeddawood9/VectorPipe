@@ -1,98 +1,75 @@
-# Step 7 — Verification on live AWS
+# Step 7: Proving it on real AWS
 
-**Dates:** 2026-10-03 (runs 1–3), 2026-10-04 (runs 4–6) · **Commits:** none (operational step; results recorded here and in the README)
+*October 3 and 4. No code changes; this page is the record.*
 
-## Goal
+## What I was trying to do
 
-Prove on real AWS what moto cannot: the IAM permissions, the real SQS behaviour, and above all the
-full pipeline and the dead-letter path.
+moto proved the logic. It couldn't prove the IAM permissions or how real SQS behaves. So I ran the
+real thing against real AWS, as the `vectorpipe-dev` role.
 
-## Setup
+## Round 1: the backend classes on their own
 
-* Identity: the `vectorpipe-dev` role (temporary credentials from `aws sts assume-role`).
-* Real S3 bucket and SQS queues in `us-east-1`; settings passed as environment variables.
-* A throwaway SQLite database, so no test rows went into the developer's PostgreSQL.
+I used the app's own `S3ObjectStorage` and `SqsQueue`, nothing mocked:
 
-## 1. Smoke test of the backend classes
+- S3 put, get and delete all worked, and a missing key came back as "not found". That proved
+  `ListBucket` was in the policy.
+- The redrive policy check passed at startup.
+- I sent a message and received it (count 1), made it visible again, received it again (count 2), then
+  deleted it.
+- `stats()` read both the queue and the DLQ. That's the `GetQueueAttributes` permission moto couldn't
+  check.
 
-| Check | Result |
-|---|---|
-| S3 put / get / delete | ✅ |
-| Missing key → `ObjectNotFoundError` (needs `s3:ListBucket`) | ✅ |
-| Redrive policy check at startup | ✅ |
-| Send → receive (count 1) → `change_visibility(0)` → receive (count 2) → delete | ✅ |
-| `stats()` on queue and DLQ (needs `GetQueueAttributes` on both) | ✅ |
+## Round 2: the whole pipeline
 
-## 2. Full pipeline (real API and worker processes)
+I started the real API and worker against live S3 and SQS. To keep test rows out of my dev database, I
+used a throwaway SQLite file.
 
-1. `POST /documents` → 202, `PENDING`.
-2. Worker: `PROCESSING` → `COMPLETED` in about 3 s, `attempts: 1`, no error.
-3. S3 held `raw/<id>` (6000 bytes) and `processed/<id>.json` (959 bytes); `/result` returned
-   3 chunks × 16 dimensions.
-4. Queue afterwards: visible 0, in flight 0, dead 0 — the message was acknowledged.
-5. SIGTERM: the worker logged "finishing the current job", then "worker stopped".
+- I uploaded a document and got `202 PENDING`. It went to `PROCESSING`, then `COMPLETED` in about 3
+  seconds, on the first attempt.
+- S3 had `raw/<id>` and `processed/<id>.json`, and the result endpoint returned the embeddings.
+- The queue was empty afterwards, so the message had been acknowledged.
+- `SIGTERM` made the worker finish and exit cleanly.
 
-## 3. Dead-letter path
+## Round 3: making a job fail on purpose
 
-A worker ran with `SIMULATE_FAILURE_RATE=1` (every attempt fails), `RETRY_BACKOFF_SECONDS=1`.
+I started a worker with `SIMULATE_FAILURE_RATE=1`, so every attempt fails.
 
-| Attempt | receive_count | final | Row status |
+| Attempt | Receive count | Last attempt? | Row |
 |---|---|---|---|
-| 1 | 1 | false | `PENDING`, attempts 1 |
-| 2 | 2 | false | `PENDING`, attempts 2 |
-| 3 | 3 | true | `FAILED`, attempts 3, error stored |
+| 1 | 1 | no | `PENDING`, 1 attempt |
+| 2 | 2 | no | `PENDING`, 2 attempts |
+| 3 | 3 | yes | `FAILED`, 3 attempts, error saved |
 
-Then SQS itself moved the message to `vectorpipe-jobs-dlq` (its receive count there was 4: the
-delivery that triggered the move). Reading the DLQ showed the poison document's job body, and
-`/stats` reported `dead: 1`.
+After that, SQS moved the message to the DLQ by itself. I read the DLQ to make sure it was really that
+job, and it was. `/stats` showed `dead: 1`.
 
-## Cleanup
+## Round 4: killing a worker in the middle of a job
 
-The DLQ message and both documents' S3 objects were deleted. Bucket: 0 objects; both queues: 0
-messages.
+This was the test I cared most about. Same setup, except with Postgres (in a throwaway container) and
+two workers. For credentials I used `AWS_PROFILE=vectorpipe-dev` from my real `~/.aws/config`. To keep
+the run short, I set a 20-second visibility timeout and made each job take 10 seconds.
 
-## How to repeat
-
-1. Set in `.env`: `STORAGE_BACKEND=s3`, `QUEUE_BACKEND=sqs`, `AWS_REGION=us-east-1`,
-   `AWS_PROFILE=vectorpipe-dev`, and `S3_BUCKET`, `SQS_QUEUE_URL`, `SQS_DLQ_URL` from
-   `terraform output`.
-2. `alembic upgrade head`, then `python -m app.api` and `python -m app.worker`.
-3. Upload: `curl -F "file=@doc.txt" http://127.0.0.1:8000/documents`, then poll
-   `GET /documents/<id>`.
-4. DLQ path: start the worker with `SIMULATE_FAILURE_RATE=1` and upload again.
-5. Inspect with `aws s3 ls s3://<bucket>/ --recursive --profile vectorpipe-dev`.
-   (The role cannot read the DLQ; use your own user for `aws sqs receive-message` on it.)
-
-## 4. Worker killed mid-job (crash recovery)
-
-Setup changes for this run and the next two: **PostgreSQL 15** (throwaway container), **two workers**,
-credentials from **`AWS_PROFILE=vectorpipe-dev`** in the real `~/.aws/config` (no `AWS_*` variables
-set), `QUEUE_VISIBILITY_TIMEOUT_SECONDS=20`, `PROCESSING_DELAY_SECONDS=10`.
-
-| Time | Event |
+| Time | What happened |
 |---|---|
-| 0 s | worker 1 receives the job (receive_count 1); row `PROCESSING`, attempts 1 |
-| ~3 s | worker 1 gets **SIGKILL** mid-job: no graceful shutdown, no acknowledgement, row left `PROCESSING` |
-| ~21 s | visibility timeout expires; SQS redelivers to worker 2 (receive_count 2). The row is older than the stale threshold (0.8 × 20 s = 16 s), so worker 2 reclaims it: `PROCESSING`, attempts 2 |
-| ~34 s | worker 2 finishes: `COMPLETED`, attempts 2; raw and processed objects in S3; queue empty, DLQ empty |
+| 0 s | Worker 1 picks up the job. Status `PROCESSING`, attempt 1 |
+| ~3 s | I `kill -9` worker 1. No shutdown and no acknowledgement; the row is stuck at `PROCESSING` |
+| ~21 s | The visibility timeout runs out and SQS gives the job to worker 2 (receive count 2). The row has been still for longer than 16 s (80% of the timeout), so worker 2 takes it over: attempt 2 |
+| ~34 s | Worker 2 finishes. `COMPLETED`, attempt 2. Both files in S3, queue and DLQ empty |
 
-The job was not lost, not dead-lettered and not processed twice to completion.
+Nothing was lost, nothing ended up in the DLQ, and only one worker finished the job.
 
-## 5. Flow on PostgreSQL with two workers
+## Round 5: Postgres with two workers
 
-Six documents uploaded at once to two workers: all six `COMPLETED` with attempts 1 within about
-30 s, split 3/3 between the workers (each SQS message went to exactly one worker). Database:
-`COMPLETED|1|6` plus the crash-test row `COMPLETED|2|1`. Queue and DLQ empty afterwards.
+I uploaded six documents at once. All six completed on the first attempt in about 30 seconds, split
+3 and 3 between the two workers.
 
-## 6. `AWS_PROFILE` against the real `~/.aws/config`
+## Cleaning up
 
-Both workers logged `storage_backend=s3 queue_backend=sqs`, and every AWS call above went through
-the `vectorpipe-dev` profile, so boto3 assumed the role from `role_arn` + `source_profile` itself.
+After every round I deleted the test files from S3, consumed any messages I'd left, stopped the
+processes and removed the Postgres container.
 
-All test objects were deleted afterwards and the container removed.
+## Still open
 
-## Not covered yet
-
-* Running the app in containers on a cluster (EKS) with workload IAM roles instead of the dev role.
-* A worker killed while its job is already near the visibility timeout under real embedding load
-  (here the job took 10 s against a 20 s timeout).
+- This isn't a real cluster yet, and it isn't using real workload roles.
+- I haven't tried killing a worker when its job is already close to the visibility timeout. Here the
+  job took 10 seconds against a 20-second timeout.

@@ -1,46 +1,50 @@
-# Step 9 — Network layer: VPC, two AZs, one NAT
+# Step 9: The network
 
-**Date:** 2026-10-04 · **Commit:** `81e1518` Add the network layer: VPC, two AZs, one NAT, S3 endpoint
+*October 4. Commit: "Add the network layer: VPC, two AZs, one NAT, S3 endpoint".*
 
-## Goal
+## What I was trying to do
 
-A private network for the database and, later, EKS. It's a separate layer so it can be destroyed
-after every session to stop the NAT charges, without touching the foundation.
+Build a private network for the database now, and for EKS later. I made it its own layer, so I can
+destroy it at the end of every session and stop paying for the NAT, without touching the foundation.
 
-## What was built (`terraform/network/`, state `network/terraform.tfstate`)
+## What I built (`terraform/network/`, state at `network/terraform.tfstate`)
 
-| Resource | Settings |
-|---|---|
-| VPC | `10.0.0.0/16`, DNS support and hostnames on (EKS and RDS need them) |
-| Public subnets | one `/24` per AZ, for the load balancer and the NAT; route to the internet gateway |
-| Private subnets | one `/20` per AZ; large because EKS pods take IPs from the node subnet |
-| NAT gateway | **one**, with its Elastic IP, in the first public subnet |
-| Private route tables | one per AZ, `0.0.0.0/0` → NAT |
-| S3 gateway endpoint | on the private route tables: S3 traffic skips the NAT, at no cost |
-| Subnet tags | `kubernetes.io/role/elb` (public), `internal-elb` (private) for the AWS Load Balancer Controller |
+- **VPC** `10.0.0.0/16`, with DNS support and hostnames on. EKS and RDS both need those.
+- **Two AZs**, which is the minimum for an RDS subnet group, EKS, and a public load balancer. I take
+  the first two the account returns, which were `us-east-1a` and `us-east-1b`. I keep away from
+  `us-east-1e`, because EKS control planes don't support it.
+- **Public subnets**, a `/24` in each AZ, for the load balancer and the NAT. They route to an internet
+  gateway.
+- **Private subnets**, a `/20` in each AZ. They're big on purpose, because EKS gives pods IP addresses
+  from the node's subnet.
+- **One NAT gateway**, with its Elastic IP, in the first public subnet.
+- **One private route table per AZ**, each sending `0.0.0.0/0` to the NAT.
+- **An S3 gateway endpoint** on the private route tables. It's free, and it keeps S3 traffic off the
+  NAT.
+- **Subnet tags** for the AWS Load Balancer Controller: `kubernetes.io/role/elb` on public subnets,
+  `internal-elb` on private ones. That way I won't have to come back and edit this layer when I add EKS.
 
-AZs: the first two the account returns, **us-east-1a and us-east-1b** (us-east-1e is avoided: EKS
-control planes don't support it).
+## The one-NAT decision
 
-## Key design decision: one NAT
+One NAT gateway means that if its AZ goes down, both private subnets lose internet access. I'm fine
+with that here. I destroy the network after every session, nothing depends on it staying up, and my
+budget is small.
 
-One AZ outage would cut the private subnets off from the internet. That is acceptable here: the network
-is destroyed after every session, nothing depends on it staying up, and the budget is small. In
-production set `nat_per_az = true`; the private route tables are already one per AZ, so nothing else
-changes.
+In production I'd run one NAT per AZ. That's a single variable, `nat_per_az = true`. The private route
+tables are already one per AZ, so nothing else has to change.
 
-## How to verify
+## Checking it
 
 ```bash
-cd terraform/network && terraform plan     # 19 to add on a fresh build
+cd terraform/network && terraform plan    # 19 to add on a fresh build
 aws ec2 describe-nat-gateways --filter Name=state,Values=available
 aws ec2 describe-route-tables --filters Name=vpc-id,Values=<vpc_id>
-# both private tables: 0.0.0.0/0 → nat-…, plus the S3 endpoint route (vpce-…)
 ```
 
-Verified on the first build: 19 added; NAT available; both private tables had the NAT and S3 routes.
+Both private route tables should have `0.0.0.0/0` going to the NAT, plus a route to the S3 endpoint.
+On the first build I got 19 added, the NAT was available, and both tables had both routes.
 
-## Left open
+## Still open
 
-The NAT and its Elastic IP bill by the hour. Destroy this layer after the data layer at the end of
-every session.
+The NAT and its Elastic IP bill every hour. At the end of a session I destroy this layer, after the
+data layer.
