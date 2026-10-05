@@ -19,6 +19,7 @@ look at the commits it mentions to see the actual change.
 | 8 | [CI and pushing images without AWS keys](steps/08-ci-oidc.md) |
 | 9 | [The network](steps/09-network.md) |
 | 10 | [RDS, and a client nobody can SSH into](steps/10-data-layer.md) |
+| 11 | [A Kubernetes cluster](steps/11-eks-cluster.md) |
 
 ## Where it stands
 
@@ -33,10 +34,11 @@ Worker ◀──receive─────│ ECR  vectorpipe:<git-sha>   ◀── 
 ```
 
 The foundation (S3, SQS, ECR, IAM) stays up all the time because it costs nothing while idle. The
-network and the database are session layers: I build them when I need them and destroy them when I'm
-done, because the NAT gateway and RDS bill by the hour.
+network, the database and the Kubernetes cluster are session layers: I build them when I need them and
+destroy them when I'm done, because the NAT gateway, RDS and EKS bill by the hour. They go up in the
+order network, then eks (and data when I need the database), and come down in reverse.
 
-What's next: running the app on EKS, and giving it a database user of its own instead of the master
-user.
+What's next: running the app on the cluster, and giving it a database user of its own instead of the
+master user.
 
 How I keep this log is in [DOCS_INSTRUCTIONS.md](DOCS_INSTRUCTIONS.md).
