@@ -1,6 +1,6 @@
 # Step 7: Proving it on real AWS
 
-*October 3 and 4. No code changes; this page is the record.*
+*No code changes; this page is the record.*
 
 ## What I was trying to do
 

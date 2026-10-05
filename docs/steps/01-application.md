@@ -1,6 +1,6 @@
 # Step 1: The app
 
-*October 1. Commit: "Add application code".*
+*Commit: "Add application code".*
 
 ## What I was trying to do
 

@@ -1,6 +1,6 @@
 # Step 3: Somewhere safe for Terraform state
 
-*October 2. Commits: "Add Terraform remote state bootstrap and S3 backend", "Update README and add
+*Commits: "Add Terraform remote state bootstrap and S3 backend", "Update README and add
 CI/docs placeholders", "Ignore Terraform plans, crash logs and overrides".*
 
 ## What I was trying to do

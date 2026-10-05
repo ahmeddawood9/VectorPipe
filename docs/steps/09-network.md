@@ -1,6 +1,6 @@
 # Step 9: The network
 
-*October 4. Commit: "Add the network layer: VPC, two AZs, one NAT, S3 endpoint".*
+*Commit: "Add the network layer: VPC, two AZs, one NAT, S3 endpoint".*
 
 ## What I was trying to do
 

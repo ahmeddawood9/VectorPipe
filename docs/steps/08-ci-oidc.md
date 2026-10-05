@@ -1,6 +1,6 @@
 # Step 8: CI, and pushing images without AWS keys
 
-*October 4. Commits: "Add CI: run tests, push the image to ECR from main", "Isolate tests from ambient
+*Commits: "Add CI: run tests, push the image to ECR from main", "Isolate tests from ambient
 backend and AWS settings", "Add the GitHub OIDC provider and CI role for ECR pushes".*
 
 ## What I was trying to do
@@ -88,7 +88,7 @@ tagged with that commit.
 
 ## Still open
 
-- Some GitHub actions still target Node 20, which is being deprecated, and `ubuntu-latest` moves to
-  Ubuntu 26 on October 19.
+- Some GitHub actions still target Node 20, which is being deprecated, and `ubuntu-latest` is about to
+  move to Ubuntu 26.
 - The Dockerfile still has no `CMD` and runs as root.
 - The images aren't deployed anywhere yet.

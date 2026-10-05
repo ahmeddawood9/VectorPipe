@@ -1,6 +1,6 @@
 # Step 4: Teaching the app to talk to S3 and SQS
 
-*October 2. Commits: "Add S3 and SQS backends selectable by settings", "Document the S3/SQS backends
+*Commits: "Add S3 and SQS backends selectable by settings", "Document the S3/SQS backends
 and AWS setup".*
 
 ## What I was trying to do

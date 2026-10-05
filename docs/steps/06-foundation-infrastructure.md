@@ -1,6 +1,6 @@
 # Step 6: The foundation: S3, SQS, ECR and IAM
 
-*October 3. Commits: "Set up the foundation Terraform layer: provider 6.x and variables", "Add the
+*Commits: "Set up the foundation Terraform layer: provider 6.x and variables", "Add the
 documents S3 bucket", "Add the jobs SQS queue with a dead-letter queue", "Add the ECR repository for
 the application image", "Add least-privilege IAM policies and a local dev role", "Expose the values
 the app needs as Terraform outputs", "Fix the state key in the bootstrap backend_config output", "Add

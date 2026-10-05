@@ -1,6 +1,6 @@
 # Step 10: RDS, and a client nobody can SSH into
 
-*October 4. Commits: "Add the data layer: private RDS PostgreSQL and an SSM-only test client",
+*Commits: "Add the data layer: private RDS PostgreSQL and an SSM-only test client",
 "Document steps 9 and 10: network and data layers", "Record the RDS end-to-end run and tear down".*
 
 ## What I was trying to do
@@ -144,7 +144,7 @@ aws ec2 describe-addresses        # a leftover Elastic IP keeps billing
 The RDS password secret went away with the database.
 
 One surprise: `aws rds describe-db-snapshots` showed `database-1-snapshot`. It isn't from this
-project. It's a manual Postgres 18 snapshot from September 11, from something I tried earlier, so I
+project. It's an older manual Postgres 18 snapshot, from something I tried earlier, so I
 left it where it was.
 
 ## Still open

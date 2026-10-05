@@ -1,6 +1,6 @@
 # Step 5: Running locally as a real IAM role
 
-*October 3. Commit: "Add AWS_PROFILE so the app can run as an assumed role locally".*
+*Commit: "Add AWS_PROFILE so the app can run as an assumed role locally".*
 
 ## What I was trying to do
 

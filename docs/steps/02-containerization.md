@@ -1,6 +1,6 @@
 # Step 2: Docker and docker-compose
 
-*October 1. Commit: "Add Dockerfile, docker-compose and env template".*
+*Commit: "Add Dockerfile, docker-compose and env template".*
 
 ## What I was trying to do
 

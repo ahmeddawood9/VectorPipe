@@ -7,18 +7,18 @@ I fixed it. The README at the root explains how to use the project. This explain
 Each step is one page. The commits on `main` line up with the steps, so you can read a page and then
 look at the commits it mentions to see the actual change.
 
-| # | Step | When |
-|---|---|---|
-| 1 | [The app: API, worker, local storage and queue](steps/01-application.md) | Oct 1 |
-| 2 | [Docker and docker-compose](steps/02-containerization.md) | Oct 1 |
-| 3 | [Somewhere safe for Terraform state](steps/03-terraform-state-bootstrap.md) | Oct 2 |
-| 4 | [Teaching the app to talk to S3 and SQS](steps/04-aws-backends.md) | Oct 2 |
-| 5 | [Running locally as a real IAM role](steps/05-assume-role-profile.md) | Oct 3 |
-| 6 | [The foundation: S3, SQS, ECR and IAM](steps/06-foundation-infrastructure.md) | Oct 3 |
-| 7 | [Proving it on real AWS](steps/07-live-verification.md) | Oct 3–4 |
-| 8 | [CI and pushing images without AWS keys](steps/08-ci-oidc.md) | Oct 4 |
-| 9 | [The network](steps/09-network.md) | Oct 4 |
-| 10 | [RDS, and a client nobody can SSH into](steps/10-data-layer.md) | Oct 4 |
+| # | Step |
+|---|---|
+| 1 | [The app: API, worker, local storage and queue](steps/01-application.md) |
+| 2 | [Docker and docker-compose](steps/02-containerization.md) |
+| 3 | [Somewhere safe for Terraform state](steps/03-terraform-state-bootstrap.md) |
+| 4 | [Teaching the app to talk to S3 and SQS](steps/04-aws-backends.md) |
+| 5 | [Running locally as a real IAM role](steps/05-assume-role-profile.md) |
+| 6 | [The foundation: S3, SQS, ECR and IAM](steps/06-foundation-infrastructure.md) |
+| 7 | [Proving it on real AWS](steps/07-live-verification.md) |
+| 8 | [CI and pushing images without AWS keys](steps/08-ci-oidc.md) |
+| 9 | [The network](steps/09-network.md) |
+| 10 | [RDS, and a client nobody can SSH into](steps/10-data-layer.md) |
 
 ## Where it stands
 
