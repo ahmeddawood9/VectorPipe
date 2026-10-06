@@ -88,7 +88,7 @@ tagged with that commit.
 
 ## Still open
 
-- Some GitHub actions still target Node 20, which is being deprecated, and `ubuntu-latest` is about to
-  move to Ubuntu 26.
+- The workflow's actions now run on Node 24 (`checkout` v7, `setup-python` v7, `configure-aws-credentials`
+  v6; `amazon-ecr-login` v2 already did). `ubuntu-latest` is about to move to Ubuntu 26, which I'll watch.
 - The Dockerfile still has no `CMD` and runs as root.
 - The images aren't deployed anywhere yet.
