@@ -41,10 +41,11 @@ init container on purpose: with two API replicas, both would try to migrate.
 | e | Root or non-root? | The Dockerfile has no `USER`, so it runs as **root**. It runs fine as a numeric non-root UID: as `10001` (which has no passwd entry) the migration applied, `/health` returned 200, the worker's metrics were served, and nothing was written under `/app`. I added `runAsNonRoot: true` and `runAsUser: 10001` to the API, worker and migration pods, with the UID in `values.yaml`. |
 | f | Do the Terraform outputs `gen-values.sh` reads exist? | All eight do: `ecr_repository_url`, `region`, `s3_bucket`, `sqs_queue_url` and `sqs_dlq_url` in `terraform/`, and `db_endpoint`, `db_port` and `db_name` in `terraform/data/`. The script's paths match the layout, so nothing needed changing. |
 
-For (d) and (e) I built the image from an export of the committed files and not from my working folder.
-The folder holds about 5 GB of Terraform provider caches that `.dockerignore` doesn't exclude, so a plain
-`docker build .` would have tried to copy them. CI builds from a clean checkout, so it never sees them. The
-test image was local only and I deleted it afterwards.
+For (d) and (e) I first built the image from an export of the committed files and not from my working
+folder. The folder holds about 5 GB of Terraform provider caches that the old `.dockerignore` didn't
+exclude, so a plain `docker build .` tried to upload all of it. CI builds from a clean checkout, so it
+never saw them. I fixed the `.dockerignore` afterwards (below). The test images were local only and I
+deleted them.
 
 ## What I changed in the draft
 
@@ -69,6 +70,42 @@ Lint passes, with only a note that the chart has no icon. The template renders f
 (ConfigMap, Service, two Deployments, Job) and all of them parse as YAML. Without the values, the
 `required` checks stop the render and name the missing one, which is what I want.
 
+## Fixes I made afterwards
+
+Three of the problems I found were small enough to fix straight away.
+
+**`gen-values.sh` now fails loudly.** The problem was that the values were computed inside the heredoc,
+where a failing command doesn't stop the script. It now fetches every output into a plain variable first,
+rejects an empty one with a message naming it, and only then writes the file. I tested it three ways:
+
+| Case | Result |
+|---|---|
+| The real script with the data layer destroyed (read-only `terraform output` calls) | `ERROR: output 'db_endpoint' is empty in .../terraform/data (is that layer applied?)`, exit 1, no file written |
+| A fake `terraform` returning every output | exit 0, a valid values file, and `helm template` accepts it |
+| A fake `terraform` where `db_port` exists but is empty | exit 1, and the good file from the previous case is left untouched |
+
+**The migration Job's container is hardened** like the other two: `allowPrivilegeEscalation: false` and all
+capabilities dropped. I rendered the chart and checked all three workloads, and each has the same pod-level
+non-root setting and the same container-level settings.
+
+**The `.dockerignore` now excludes** `terraform/`, `**/.terraform/`, `**/*.tfstate*`, `charts/`, `k8s/` and
+`docs/` (`.git` and `.venv` were already there). I measured the build context with the classic builder, which
+prints "Sending build context to Docker daemon":
+
+| | Build context | Upload time |
+|---|---|---|
+| Before | **5.56 GB** | 41 s |
+| After | **422 kB** | 1 s |
+
+Then I rebuilt the real image from my working folder and ran the same check as before:
+`which alembic` finds `/usr/local/bin/alembic`, and `alembic.ini`, `migrations/` and the whole `app/`
+package are in `/app`. `terraform`, `charts`, `k8s`, `docs`, `.git`, `.venv`, `tests` and `.env` are
+absent, and there isn't a single `*.tfstate*` or `.terraform` anywhere under `/app`. The migration, `/health`
+and the worker's metrics still work as UID 10001.
+
+One detail that tripped me: a bare `*.tfstate*` in a `.dockerignore` only matches the top-level folder, so I
+wrote `**/*.tfstate*`.
+
 ## Using it (not done yet)
 
 ```bash
@@ -82,15 +119,13 @@ else and needs it. Otherwise its pod just sits waiting.
 
 ## Still open
 
-- **`gen-values.sh` fails silently.** I tested it with a fake `terraform` that fails on one output, as the
-  real one does when the data layer is destroyed. The script printed the error, still wrote the file, and
-  exited 0 with `host:` empty. The chart's `required` checks catch an empty host, region, bucket and queue
-  URLs, but not an empty port or name. The fix is small (collect the values into variables first so
-  `set -e` can fail), and I haven't made it.
-- **The migration Job's container lacks** the `allowPrivilegeEscalation: false` and `drop: ALL` settings the
-  API and worker containers have.
-- **`.dockerignore`** doesn't exclude `terraform/`, `docs/`, `k8s/`, `charts/` or `.github/`, so the image
-  carries them.
+- **A stale `values-aws.yaml` survives a failed run.** The script leaves an existing file alone when it
+  fails, so a file from an earlier session (with an old database endpoint) would still be used. The error
+  says the layer isn't applied, but I should delete the file when I tear things down.
+- **The `.dockerignore` is still loose in two ways.** Its bare `__pycache__` and `*.pyc` patterns only match
+  the top-level folder, so nested ones get copied, and `scripts/`, `.github/` and any stray folder in the
+  working directory (I had an untracked one) end up in the image when it's built locally. CI builds from a
+  clean checkout, so it only picks up `scripts/` and `.github/`.
 - **`/health` doesn't check the database or queue.** A readiness probe that did would keep traffic away from
   a pod that can't work.
 - The chart has never been installed, and the Ingress/ALB comes later.
