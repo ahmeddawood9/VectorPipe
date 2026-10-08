@@ -3,6 +3,7 @@
 # Run after every rebuild: the DB endpoint changes.
 set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel)
+rm -f "$ROOT/charts/vectorpipe/values-aws.yaml"   # a failed run must leave NO file behind
 
 out() {
   local v
