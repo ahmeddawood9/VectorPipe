@@ -1,0 +1,49 @@
+# One image, run three ways (api, worker, migration). Tag = git SHA from CI.
+image:
+  repository: ""   # from values-aws.yaml (generated); holds your account ID, so not committed here
+  tag: ""          # required: --set image.tag=<git sha>
+  pullPolicy: IfNotPresent
+
+# Generated into values-aws.yaml from Terraform outputs; never edit by hand.
+aws:
+  region: ""
+  s3Bucket: ""
+  sqsQueueUrl: ""
+  sqsDlqUrl: ""
+
+db:
+  host: ""
+  port: 5432
+  name: vectorpipe
+
+# The image has no USER (runs as root by default). The app runs fine as this numeric UID, so the pods
+# are forced to it. runAsNonRoot needs a numeric runAsUser to be verifiable.
+securityContext:
+  runAsUser: 10001
+
+# Must equal the Terraform values (visibility_timeout_seconds / max_receive_count).
+config:
+  queueVisibilityTimeoutSeconds: 60
+  queueMaxReceiveCount: 3
+
+api:
+  replicas: 2
+  serviceAccountName: api   # must match the Pod Identity association in terraform/workloads
+  port: 8000
+  probePath: /health        # the app's only health route; it does not check the database or queue
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+worker:
+  replicas: 1               # KEDA takes this over later
+  serviceAccountName: worker
+  metricsPort: 9101
+  # Longer than one job plus shutdown, so SIGTERM lets the current job finish.
+  terminationGracePeriodSeconds: 120
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+migration:
+  enabled: true

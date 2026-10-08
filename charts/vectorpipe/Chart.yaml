@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vectorpipe
+description: VectorPipe API, worker and database migration job
+type: application
+version: 0.1.0
+appVersion: "0"

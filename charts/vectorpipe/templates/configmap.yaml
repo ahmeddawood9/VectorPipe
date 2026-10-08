@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "vectorpipe.labels" . | nindent 4 }}
+data:
+  STORAGE_BACKEND: "s3"
+  QUEUE_BACKEND: "sqs"
+  AWS_REGION: {{ required "aws.region is required" .Values.aws.region | quote }}
+  S3_BUCKET: {{ required "aws.s3Bucket is required" .Values.aws.s3Bucket | quote }}
+  SQS_QUEUE_URL: {{ required "aws.sqsQueueUrl is required" .Values.aws.sqsQueueUrl | quote }}
+  SQS_DLQ_URL: {{ required "aws.sqsDlqUrl is required" .Values.aws.sqsDlqUrl | quote }}
+  QUEUE_VISIBILITY_TIMEOUT_SECONDS: {{ .Values.config.queueVisibilityTimeoutSeconds | quote }}
+  QUEUE_MAX_RECEIVE_COUNT: {{ .Values.config.queueMaxReceiveCount | quote }}

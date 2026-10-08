@@ -34,6 +34,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Generated Helm values (hold the account id and endpoints)
+charts/vectorpipe/values-aws.yaml
+
 # Documentation Inbox
 docs/_inbox/
 

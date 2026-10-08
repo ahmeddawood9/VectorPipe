@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    {{- include "vectorpipe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "vectorpipe.labels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "vectorpipe.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+        # Config changes roll the pods (ConfigMap edits alone do not restart anything).
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.api.serviceAccountName }}
+      securityContext:
+        {{- include "vectorpipe.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "vectorpipe.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.api"]
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+          env:
+            {{- include "vectorpipe.dbEnv" . | nindent 12 }}
+            - name: API_HOST
+              value: "0.0.0.0"   # the default 127.0.0.1 would make the pod unreachable
+            - name: API_PORT
+              value: {{ .Values.api.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.port }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.api.probePath }}
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.api.probePath }}
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
