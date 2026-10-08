@@ -10,7 +10,9 @@ venv
 env
 storage/
 tests/
-.env
+# env files hold secrets; never bake them into an image (anywhere in the tree)
+**/.env
+**/.env.*
 
 # Not needed at runtime (locally terraform/ alone holds ~5 GB of provider caches)
 terraform/
