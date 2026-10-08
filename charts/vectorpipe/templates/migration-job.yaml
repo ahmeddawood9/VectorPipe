@@ -29,4 +29,8 @@ spec:
           command: ["alembic", "upgrade", "head"]
           env:
             {{- include "vectorpipe.dbEnv" . | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
 {{- end }}
