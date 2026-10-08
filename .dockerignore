@@ -11,3 +11,11 @@ env
 storage/
 tests/
 .env
+
+# Not needed at runtime (locally terraform/ alone holds ~5 GB of provider caches)
+terraform/
+**/.terraform/
+**/*.tfstate*
+charts/
+k8s/
+docs/
