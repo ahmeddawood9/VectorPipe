@@ -103,6 +103,14 @@ package are in `/app`. `terraform`, `charts`, `k8s`, `docs`, `.git`, `.venv`, `t
 absent, and there isn't a single `*.tfstate*` or `.terraform` anywhere under `/app`. The migration, `/health`
 and the worker's metrics still work as UID 10001.
 
+**Env files, which I checked separately.** The old `.dockerignore` already had a bare `.env`, so my real `.env`
+was never in an image. But a bare pattern only matches the top-level folder, so other variants were not
+covered. I proved it with a throwaway folder containing `.env`, `.env.local`, `.env.production`,
+`.env.example`, `app/.env` and `app/sub/.env.staging`: with the old rules everything except `.env` landed in
+the image. The rules are now `**/.env` and `**/.env.*`, which excludes all of them. I left `.env.example`
+excluded too, since the app never reads it. A rebuild from my working folder, which has a real `.env`,
+contains no env-style file at all. CI was never affected, because a clean checkout has no `.env`.
+
 One detail that tripped me: a bare `*.tfstate*` in a `.dockerignore` only matches the top-level folder, so I
 wrote `**/*.tfstate*`.
 
