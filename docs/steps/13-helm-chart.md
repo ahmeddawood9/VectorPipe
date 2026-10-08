@@ -76,13 +76,15 @@ Three of the problems I found were small enough to fix straight away.
 
 **`gen-values.sh` now fails loudly.** The problem was that the values were computed inside the heredoc,
 where a failing command doesn't stop the script. It now fetches every output into a plain variable first,
-rejects an empty one with a message naming it, and only then writes the file. I tested it three ways:
+rejects an empty one with a message naming it, and only then writes the file. It also deletes any existing
+`values-aws.yaml` as its first step, so a failed run can never leave a stale one behind. I tested it three ways,
+planting a stale file before each failing run:
 
 | Case | Result |
 |---|---|
-| The real script with the data layer destroyed (read-only `terraform output` calls) | `ERROR: output 'db_endpoint' is empty in .../terraform/data (is that layer applied?)`, exit 1, no file written |
+| The real script with the data layer destroyed (read-only `terraform output` calls) | `ERROR: output 'db_endpoint' is empty in .../terraform/data (is that layer applied?)`, exit 1, and the stale file I had planted is **gone** |
 | A fake `terraform` returning every output | exit 0, a valid values file, and `helm template` accepts it |
-| A fake `terraform` where `db_port` exists but is empty | exit 1, and the good file from the previous case is left untouched |
+| A fake `terraform` where `db_port` exists but is empty | exit 1, and the good file from the previous case is **gone**, so there is no file at all |
 
 **The migration Job's container is hardened** like the other two: `allowPrivilegeEscalation: false` and all
 capabilities dropped. I rendered the chart and checked all three workloads, and each has the same pod-level
@@ -127,9 +129,6 @@ else and needs it. Otherwise its pod just sits waiting.
 
 ## Still open
 
-- **A stale `values-aws.yaml` survives a failed run.** The script leaves an existing file alone when it
-  fails, so a file from an earlier session (with an old database endpoint) would still be used. The error
-  says the layer isn't applied, but I should delete the file when I tear things down.
 - **The `.dockerignore` is still loose in two ways.** Its bare `__pycache__` and `*.pyc` patterns only match
   the top-level folder, so nested ones get copied, and `scripts/`, `.github/` and any stray folder in the
   working directory (I had an untracked one) end up in the image when it's built locally. CI builds from a
