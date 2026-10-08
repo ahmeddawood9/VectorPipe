@@ -211,7 +211,8 @@ with native locking and is never committed (`*.tfstate` is git-ignored).
 | `terraform/sqs.tf` | `vectorpipe-jobs` queue + `vectorpipe-jobs-dlq`; redrive after 3 receives, visibility 60 s |
 | `terraform/ecr.tf` | `vectorpipe` image repository: immutable tags, scan on push, keeps the last 10 images |
 | `terraform/iam.tf` | Least-privilege `vectorpipe-api` / `vectorpipe-worker` policies and the `vectorpipe-dev` role for local runs |
-| `terraform/network/`, `terraform/data/`, `terraform/eks/` | Session layers with their own state: VPC and NAT, private RDS with an SSM-only client, and an EKS cluster with managed nodes. Created network first and destroyed in reverse, because the NAT, RDS and EKS bill by the hour. |
+| `terraform/network/`, `terraform/data/`, `terraform/eks/`, `terraform/workloads/` | Session layers with their own state: VPC and NAT, private RDS with an SSM-only client, an EKS cluster with managed nodes, and the Pod Identity roles that let the app's pods reach AWS. Created in that order and destroyed in reverse, because the NAT, RDS and EKS bill by the hour. |
+| `k8s/bootstrap/` | First Kubernetes manifests: the namespace, service accounts, and the External Secrets store and secret that bring the database password into the cluster |
 | `terraform/ci.tf` | GitHub OIDC provider and the `vectorpipe-ci` role: only pushes to `main` of this repo (immutable subject with owner/repo ids) may push images to ECR |
 | `terraform/outputs.tf` | Bucket, queue URLs, region, ECR URL, role and policy ARNs, `ci_role_arn` (GitHub variable `AWS_ROLE_ARN`) |
 
@@ -253,5 +254,6 @@ app/db         engine/session           app/config    settings + logging
 app/metrics    Prometheus metrics       migrations/   Alembic
 tests/         pytest suite             storage/      raw/ processed/ (runtime data)
 docs/          step-by-step build history (docs/steps/)
-terraform/     state bootstrap, foundation layer (S3, SQS + DLQ, ECR, IAM), and the network / data / eks session layers
+terraform/     state bootstrap, foundation layer (S3, SQS + DLQ, ECR, IAM), and the network / data / eks / workloads session layers
+k8s/           Kubernetes manifests (k8s/bootstrap)
 ```
