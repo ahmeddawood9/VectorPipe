@@ -135,6 +135,7 @@ else and needs it. Otherwise its pod just sits waiting.
   clean checkout, so it only picks up `scripts/` and `.github/`.
 - **`/health` doesn't check the database or queue.** A readiness probe that did would keep traffic away from
   a pod that can't work.
-- The chart has never been installed, and the Ingress/ALB comes later.
+- The chart has now been installed once, on a live cluster ([step 14](14-first-install.md)). The Ingress/ALB
+  comes later.
 - The Dockerfile still has no `CMD` (the chart sets `command`), and the app still connects as the master
   database user.

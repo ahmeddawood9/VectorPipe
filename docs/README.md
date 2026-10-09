@@ -22,6 +22,7 @@ look at the commits it mentions to see the actual change.
 | 11 | [A Kubernetes cluster](steps/11-eks-cluster.md) |
 | 12 | [Wiring the app to AWS from inside the cluster](steps/12-workloads-wiring.md) |
 | 13 | [Packaging the app for Kubernetes](steps/13-helm-chart.md) |
+| 14 | [The first install on the cluster](steps/14-first-install.md) |
 
 ## Where it stands
 
@@ -40,7 +41,7 @@ network, the database and the Kubernetes cluster are session layers: I build the
 destroy them when I'm done, because the NAT gateway, RDS and EKS bill by the hour. They go up in the
 order network, data, eks, workloads, and come down in reverse.
 
-What's next: installing the chart on the cluster for the first time, and a database user of its own instead
-of the master user.
+The app has now run on the cluster end to end ([step 14](steps/14-first-install.md)). What's next: a database
+user of its own instead of the master user, and an Ingress so I don't need `kubectl port-forward`.
 
 How I keep this log is in [DOCS_INSTRUCTIONS.md](DOCS_INSTRUCTIONS.md).

@@ -243,6 +243,8 @@ place load balancers without editing this layer.
 full upload → `COMPLETED` flow, a job failing 3 times that ended `FAILED` with SQS moving it to the DLQ, and a
 worker killed mid-job whose job was redelivered to the other worker and completed. Details:
 [docs/steps/07-live-verification.md](docs/steps/07-live-verification.md).
+The app has also run on EKS with Pod Identity roles and External Secrets, through the whole upload to `COMPLETED` path
+([docs/steps/14-first-install.md](docs/steps/14-first-install.md)).
 
 ## Layout
 

@@ -138,8 +138,8 @@ workloads has to go before data.
 
 ## Still open
 
-- Nothing is applied. The layers it reads are destroyed, so a plan would fail, and I haven't run one.
-- The Deployments, the Service, the ConfigMap and the migration Job still need writing.
-- The External Secrets controller hasn't been installed, so the `ExternalSecret` has never synced. I haven't
-  confirmed that it can decrypt the RDS-managed secret; I'll see that on the first sync.
+- Applied since: the first install on the cluster, including this layer and the External Secrets sync, is in
+  [step 14](14-first-install.md). The controller can decrypt the RDS-managed secret, and the
+  `ExternalSecret` synced on the first try. The Deployments, Service, ConfigMap and migration Job are the
+  chart from [step 13](13-helm-chart.md).
 - The Dockerfile still has no `CMD` and runs as root.
