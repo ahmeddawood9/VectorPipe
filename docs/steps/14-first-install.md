@@ -164,6 +164,44 @@ on the cluster: an invalid job, rejected three times, then parked.
 - **The pods run with group 0.** Only the user is set in the chart (`runAsUser: 10001`), so the group is root's
   group. It's not a problem, but it isn't a fully non-root identity either.
 
+## Tearing it down
+
+I stopped for the session, so everything that bills by the hour came down. The order matters:
+
+```
+helm uninstall vectorpipe, helm uninstall external-secrets
+workloads  →  eks  →  data  →  network
+```
+
+Workloads goes before data because its security group rule sits on a group the data layer owns. EKS goes
+before the network because the cluster's network interfaces have to be gone before the subnets can be
+deleted. The foundation layer stays, since nothing in it bills by the hour.
+
+| Layer | Destroyed | Notes |
+|---|---|---|
+| workloads | 10 | the three pod roles, their attachments and associations, and the security group rule |
+| eks | 15 | the node group took about two minutes and the control plane a few more; the destroy needs both variables, but any valid `/32` will do because nothing is being created |
+| data | 10 | RDS took under two minutes (no final snapshot, no deletion protection) |
+| network | 19 | including the NAT gateway and its Elastic IP |
+
+Then I checked nothing was left billing. All of these came back empty: EKS clusters, RDS instances and
+snapshots, NAT gateways, EC2 instances, Elastic IPs, EBS volumes (the nodes' and the test client's root
+disks went with their instances), load balancers, `vectorpipe` VPCs, loose network interfaces and
+`vectorpipe`-tagged security groups. The RDS-managed secret was gone too. Terraform state shows zero resources
+for workloads, eks, data and network, and 16 for the foundation. The only roles left are the foundation's
+`vectorpipe-ci` and `vectorpipe-dev`.
+
+I also cleaned up after myself:
+
+- the test document in the bucket (both objects), after checking its id was the one I had created;
+- the generated `values-aws.yaml`, which held the old database endpoint (the script deletes a stale one
+  anyway when it runs, but there was no reason to leave it);
+- my kube config still has a context for the destroyed cluster. It's harmless and `update-kubeconfig` will
+  replace it next time.
+
+One thing outside this project is still in the account: an old Aurora cluster snapshot from earlier
+experiments. It costs a little for storage and I haven't touched it.
+
 ## Still open
 
 - The app still connects to the database as the master user. It should get a user of its own with only the
