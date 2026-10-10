@@ -144,6 +144,7 @@ TAG=$(aws ecr describe-images --repository-name vectorpipe \
   --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text)
 IP=$(curl -s https://checkip.amazonaws.com)
 scripts/gen-argocd-app.sh $TAG $IP/32        # writes k8s/argocd/application.yaml (git-ignored)
+# It deletes any old application.yaml first and refuses anything that isn't a single IPv4 address in /32 form.
 kubectl apply -f k8s/argocd/application.yaml
 
 kubectl -n argocd get application vectorpipe -w

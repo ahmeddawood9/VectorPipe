@@ -1,7 +1,8 @@
 # Step 15: Getting ready for an ALB and Argo CD
 
 *Commits: "Add the AWS Load Balancer Controller's IAM role and policy", "Add an Ingress to the Helm chart",
-"Add the script that generates the Argo CD Application", "Document step 15 and the session B runbook".*
+"Add the script that generates the Argo CD Application", "Document step 15 and the session B runbook",
+"Make the Argo script fail clean and validate the CIDR", "Use api.port for the Ingress backend".*
 
 ## What I was trying to do
 
@@ -72,9 +73,13 @@ annotation is the only thing protecting it. I checked the chart in four ways:
 | `helm template` with `ingress.enabled=false` | renders **no** Ingress, and everything else is unchanged |
 | enabled with no CIDR | refuses, with `ingress.allowedCidr is required (your.ip/32)` |
 
-Things I noticed and left alone, because I was asked to report and not to rewrite: the Ingress hardcodes the
-backend port as `8000` instead of reading `api.port`, and it has none of the labels the other templates carry.
-Both are harmless today and worth fixing later.
+Two things I noticed in the template as it arrived: the backend port was hardcoded as `8000` instead of
+reading `api.port`, and it carries none of the labels the other templates have. I reported both, and then
+fixed the port after approval. It now reads `api.port`, the same value the Service uses for its own port
+(which is what the Ingress backend has to equal). I proved it flows end to end by rendering with the default
+and with `api.port=9000`: the Ingress backend, the Service port, the container port and `API_PORT` were equal in
+both. Lint passes with the ingress on and off, and with it off no Ingress is rendered. The missing labels are
+still open.
 
 **Will the ALB find its subnets?** This worried me, because the network layer only tags the public subnets with
 `kubernetes.io/role/elb`. The controller's own docs for this version say the cluster tag isn't required (only
@@ -90,15 +95,24 @@ it sets against `values.yaml` by generating a file with a fake `terraform`, and 
 renders the chart cleanly from those generated values, including the Ingress locked to the CIDR. So the
 script needed no fix.
 
-Two things about how it fails, which I tested with a destroyed data layer:
+Two things about how it behaved when I first tested it with a destroyed data layer:
 
-- **It fails loudly**: the error is printed and the exit code is 1.
-- **But it leaves a stale file behind**: the script deletes the old `application.yaml` only *after* fetching
-  the outputs, so a failed run keeps the previous one. Applying that would deploy an old database endpoint
-  and image tag. This is the same problem I fixed in `gen-values.sh` in step 13.
+- It failed loudly (the error is printed and the exit code is 1), which is right.
+- But it left a stale file behind: it deleted the old `application.yaml` only *after* fetching the outputs, so a
+  failed run kept the previous one. Applying that would deploy an old database endpoint and image tag. This is
+  the same problem I fixed in `gen-values.sh` in step 13.
 
-It also doesn't validate the CIDR: `not-a-cidr` is written as is. And the repo is public, so Argo CD can clone
-it without credentials.
+It also didn't validate the CIDR: `not-a-cidr` was written as is. The repo is public, so Argo CD can clone it
+without credentials.
+
+I fixed both after approval. The script now deletes the old file as its very first step (before anything can
+fail, including a bad argument) and checks the second argument against `^([0-9]{1,3}\.){3}[0-9]{1,3}/32$`,
+stopping with a message that shows what it got and what it expected. I tested ten failure cases with a stale
+file planted each time, using a fake `terraform` so nothing touched AWS: no arguments, a missing CIDR, `not-a-cidr`,
+`1.2.3.4` (no `/32`), `1.2.3.4/24`, `1.2.3/32`, `1.2.3.4/32x`, an IPv6 address, an empty string, and a valid
+CIDR with the data layer destroyed. Every one exited 1 and left no file behind. A valid address writes a file
+that parses as YAML with the ingress enabled and locked to that address. One limit remains: the regex you
+asked for checks the shape and not the values, so `999.999.999.999/32` is accepted.
 
 ## A trap in the Argo CD values
 
@@ -138,10 +152,10 @@ uninstalling External Secrets, from the stuck-namespace lesson in step 14.
 
 ## Still open
 
-- Nothing from this step has run. I haven't applied the workloads layer with the new role, installed either
-  chart, or created an ALB.
+- Nothing from this step has run on AWS. I haven't applied the workloads layer with the new role, installed
+  either chart, or created an ALB.
 - Argo CD on Kubernetes 1.37 is untested, and so is the load balancer controller on it beyond its docs.
-- `gen-argocd-app.sh` still leaves a stale file behind on a failed run and doesn't validate the CIDR.
-- The Ingress hardcodes port 8000 and has no labels.
+- The CIDR check validates the shape and not the values, so an address like `999.999.999.999/32` is accepted.
+- The Ingress still has none of the labels the other templates carry.
 - The ALB serves plain HTTP on port 80. There is no certificate or domain yet.
 - The app still connects to the database as the master user.
