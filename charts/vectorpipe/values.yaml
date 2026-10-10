@@ -47,3 +47,8 @@ worker:
 
 migration:
   enabled: true
+
+# Public ALB in front of the API. Off by default; the Argo CD Application turns it on.
+ingress:
+  enabled: false        # turned on via the generated values/Application
+  allowedCidr: ""       # required when enabled, e.g. 203.0.113.7/32
