@@ -2,8 +2,16 @@
 # Generates k8s/argocd/application.yaml (git-ignored: contains account-specific values).
 # Usage: scripts/gen-argocd-app.sh <image-tag> <your.ip/32>
 set -euo pipefail
-TAG="${1:?image tag (git sha)}"; CIDR="${2:?your ip/32}"
 cd "$(git rev-parse --show-toplevel)"
+rm -f k8s/argocd/application.yaml   # a failed run must leave NO file behind (it would deploy stale values)
+
+TAG="${1:?usage: scripts/gen-argocd-app.sh <image-tag> <your.ip/32>  (missing image tag)}"
+CIDR="${2:?usage: scripts/gen-argocd-app.sh <image-tag> <your.ip/32>  (missing your ip/32)}"
+if ! [[ "$CIDR" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/32$ ]]; then
+  echo "ERROR: '$CIDR' is not a single IPv4 address in /32 form (expected e.g. 203.0.113.7/32)" >&2
+  exit 1
+fi
+
 repo=$(terraform -chdir=terraform output -raw ecr_repository_url)
 region=$(terraform -chdir=terraform output -raw region)
 bucket=$(terraform -chdir=terraform output -raw s3_bucket)
@@ -12,7 +20,7 @@ dlq=$(terraform -chdir=terraform output -raw sqs_dlq_url)
 dbh=$(terraform -chdir=terraform/data output -raw db_endpoint)
 dbp=$(terraform -chdir=terraform/data output -raw db_port)
 dbn=$(terraform -chdir=terraform/data output -raw db_name)
-mkdir -p k8s/argocd; rm -f k8s/argocd/application.yaml
+mkdir -p k8s/argocd
 cat > k8s/argocd/application.yaml <<YAML
 apiVersion: argoproj.io/v1alpha1
 kind: Application
