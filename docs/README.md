@@ -23,6 +23,7 @@ look at the commits it mentions to see the actual change.
 | 12 | [Wiring the app to AWS from inside the cluster](steps/12-workloads-wiring.md) |
 | 13 | [Packaging the app for Kubernetes](steps/13-helm-chart.md) |
 | 14 | [The first install on the cluster](steps/14-first-install.md) |
+| 15 | [Getting ready for an ALB and Argo CD](steps/15-session-b.md) |
 
 ## Where it stands
 
@@ -43,5 +44,12 @@ order network, data, eks, workloads, and come down in reverse.
 
 The app has now run on the cluster end to end ([step 14](steps/14-first-install.md)). What's next: a database
 user of its own instead of the master user, and an Ingress so I don't need `kubectl port-forward`.
+
+## Runbooks
+
+Step-by-step procedures for running the environment, as opposed to the story of how it was built:
+
+- [Session B: ALB ingress and Argo CD](runbooks/session-b.md), the build order, the checks and the teardown
+  order (the ALB has to be deleted before anything else).
 
 How I keep this log is in [DOCS_INSTRUCTIONS.md](DOCS_INSTRUCTIONS.md).
