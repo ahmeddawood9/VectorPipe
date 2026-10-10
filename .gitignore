@@ -37,6 +37,9 @@ override.tf.json
 # Generated Helm values (hold the account id and endpoints)
 charts/vectorpipe/values-aws.yaml
 
+# Generated Argo CD Application (holds the account id and endpoints)
+k8s/argocd/application.yaml
+
 # Documentation Inbox
 docs/_inbox/
 
