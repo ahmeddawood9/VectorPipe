@@ -223,4 +223,4 @@ network interfaces and security groups block deleting the VPC, and the ALB keeps
 ## What bills while this is up
 
 The EKS control plane, the two nodes, the NAT gateway with its Elastic IP, RDS, and now the ALB. The ALB is
-the one that gets forgotten, which is why step 7 comes first.
+the one that gets forgotten, which is why section 7 deletes it first.
