@@ -212,7 +212,7 @@ with native locking and is never committed (`*.tfstate` is git-ignored).
 | `terraform/ecr.tf` | `vectorpipe` image repository: immutable tags, scan on push, keeps the last 10 images |
 | `terraform/iam.tf` | Least-privilege `vectorpipe-api` / `vectorpipe-worker` policies and the `vectorpipe-dev` role for local runs |
 | `terraform/network/`, `terraform/data/`, `terraform/eks/`, `terraform/workloads/` | Session layers with their own state: VPC and NAT, private RDS with an SSM-only client, an EKS cluster with managed nodes, and the Pod Identity roles that let the app's pods (and the AWS Load Balancer Controller) reach AWS. Created in that order and destroyed in reverse, because the NAT, RDS and EKS bill by the hour. |
-| `charts/vectorpipe/`, `scripts/gen-values.sh`, `scripts/gen-argocd-app.sh` | Helm chart for the API, worker, migration job and an optional ALB Ingress, and the scripts that write its AWS-specific values (`values-aws.yaml`) or the Argo CD Application (`k8s/argocd/application.yaml`), both git-ignored, from the Terraform outputs |
+| `charts/vectorpipe/`, `scripts/gen-values.sh`, `scripts/gen-argocd-app.sh`, `scripts/check-chart.sh` | Helm chart for the API, worker, migration job and an optional ALB Ingress, and the scripts that write its AWS-specific values (`values-aws.yaml`) or the Argo CD Application (`k8s/argocd/application.yaml`), both git-ignored, from the Terraform outputs, and an offline lint-and-render check of the chart |
 | `k8s/bootstrap/` | First Kubernetes manifests: the namespace, service accounts, and the External Secrets store and secret that bring the database password into the cluster |
 | `terraform/ci.tf` | GitHub OIDC provider and the `vectorpipe-ci` role: only pushes to `main` of this repo (immutable subject with owner/repo ids) may push images to ECR |
 | `terraform/outputs.tf` | Bucket, queue URLs, region, ECR URL, role and policy ARNs, `ci_role_arn` (GitHub variable `AWS_ROLE_ARN`) |
@@ -258,5 +258,5 @@ app/metrics    Prometheus metrics       migrations/   Alembic
 tests/         pytest suite             storage/      raw/ processed/ (runtime data)
 docs/          step-by-step build history (docs/steps/)
 terraform/     state bootstrap, foundation layer (S3, SQS + DLQ, ECR, IAM), and the network / data / eks / workloads session layers
-k8s/           Kubernetes bootstrap manifests    charts/   Helm chart    scripts/   gen-values.sh
+k8s/           Kubernetes bootstrap manifests    charts/   Helm chart    scripts/   gen-values.sh, gen-argocd-app.sh, check-chart.sh
 ```
