@@ -78,8 +78,8 @@ reading `api.port`, and it carries none of the labels the other templates have. 
 fixed the port after approval. It now reads `api.port`, the same value the Service uses for its own port
 (which is what the Ingress backend has to equal). I proved it flows end to end by rendering with the default
 and with `api.port=9000`: the Ingress backend, the Service port, the container port and `API_PORT` were equal in
-both. Lint passes with the ingress on and off, and with it off no Ingress is rendered. The missing labels are
-still open.
+both. Lint passes with the ingress on and off, and with it off no Ingress is rendered. I added the labels afterwards (the same helper the other templates use); lint still passes,
+and with the ingress off nothing is rendered.
 
 **Will the ALB find its subnets?** This worried me, because the network layer only tags the public subnets with
 `kubernetes.io/role/elb`. The controller's own docs for this version say the cluster tag isn't required (only
@@ -156,6 +156,5 @@ uninstalling External Secrets, from the stuck-namespace lesson in step 14.
   either chart, or created an ALB.
 - Argo CD on Kubernetes 1.37 is untested, and so is the load balancer controller on it beyond its docs.
 - The CIDR check validates the shape and not the values, so an address like `999.999.999.999/32` is accepted.
-- The Ingress still has none of the labels the other templates carry.
 - The ALB serves plain HTTP on port 80. There is no certificate or domain yet.
 - The app still connects to the database as the master user.
