@@ -31,6 +31,7 @@ together.
 curl -s https://checkip.amazonaws.com      # the EKS API and the ALB only accept this IP
 aws sts get-caller-identity                # you, as the admin user
 git status                                 # clean
+scripts/check-chart.sh                     # chart lints and renders offline: prints 'chart ok'
 ```
 
 ## 1. Build the AWS layers (the clock starts)
