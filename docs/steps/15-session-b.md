@@ -87,6 +87,9 @@ for controllers older than 2.1.1), that it picks subnets by the role tag, and th
 different AZs with at least 8 free IPs each. Ours have the tag, are in two AZs, and are `/24`s, so no change to
 the network is needed.
 
+`scripts/check-chart.sh` repeats these checks offline (lint with the ingress on and off, render, and the
+missing-CIDR refusal), and CI runs it on every push.
+
 ## The Argo CD Application script
 
 `gen-argocd-app.sh` writes an Application that points Argo CD at `charts/vectorpipe` on `main` and passes the
